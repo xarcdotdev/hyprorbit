@@ -1,0 +1,21 @@
+# Context labels (order matters)
+orbits: [ "α", "β", "γ", "δ" ]
+
+# Role → entries to match & launch (used by 'role seed' or your own binds)
+roles:
+  code:
+    - match: 'class:^Code$'
+      cmd: 'code'
+    - match: 'class:^(Alacritty|kitty)$'
+      cmd: 'alacritty'
+  gfx:
+    - match: 'class:^(Firefox|Zen Browser)$'
+      cmd: 'firefox'
+    - match: 'class:^Gimp$'
+      cmd: 'gimp'
+  comm:
+    - match: 'class:^Thunderbird$'
+      cmd: 'thunderbird'
+    - match: 'class:^TelegramDesktop$'
+      cmd: 'telegram-desktop'
+
