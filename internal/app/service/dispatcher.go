@@ -94,6 +94,7 @@ func (d *Dispatcher) handleOrbit(ctx context.Context, req ipc.Request) ipc.Respo
 			resp.ExitCode = 1
 			return resp
 		}
+		d.state.InvalidateClients()
 		if err := assignData(&resp, record); err != nil {
 			resp.Error = err.Error()
 			resp.ExitCode = 1
@@ -147,6 +148,7 @@ func (d *Dispatcher) handleOrbitStep(ctx context.Context, svc *orbit.Service, de
 		resp.ExitCode = 1
 		return resp
 	}
+	d.state.InvalidateClients()
 	record, err := svc.Record(ctx, name)
 	if err != nil {
 		resp.Error = err.Error()
