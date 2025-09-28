@@ -5,6 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"hypr-orbits/internal/orbit"
 	"hypr-orbits/internal/runtime"
 )
 
@@ -28,23 +29,23 @@ func newOrbitGetCommand() *cobra.Command {
 		Short: "Print the active orbit",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			svc, err := newOrbitService(cmd.Context())
+			svc, err := orbit.NewService(cmd.Context())
 			if err != nil {
 				return err
 			}
 
 			ctx := cmd.Context()
-			name, err := svc.currentOrbit(ctx)
+			name, err := svc.Current(ctx)
 			if err != nil {
 				return runtime.WrapError(err, 1)
 			}
 
-			record, err := svc.orbitRecord(ctx, name)
+			record, err := svc.Record(ctx, name)
 			if err != nil {
 				return runtime.WrapError(err, 1)
 			}
 
-			if err := printOrbit(cmd, record); err != nil {
+			if err := orbit.Print(cmd.OutOrStdout(), record); err != nil {
 				return runtime.WrapError(err, 1)
 			}
 			return nil
@@ -58,13 +59,13 @@ func newOrbitNextCommand() *cobra.Command {
 		Short: "Switch to the next orbit",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			svc, err := newOrbitService(cmd.Context())
+			svc, err := orbit.NewService(cmd.Context())
 			if err != nil {
 				return err
 			}
 
 			ctx := cmd.Context()
-			seq, err := svc.sequence(ctx)
+			seq, err := svc.Sequence(ctx)
 			if err != nil {
 				return runtime.WrapError(err, 1)
 			}
@@ -72,7 +73,7 @@ func newOrbitNextCommand() *cobra.Command {
 				return runtime.WrapError(fmt.Errorf("orbit: no orbits configured"), 1)
 			}
 
-			current, err := svc.currentOrbit(ctx)
+			current, err := svc.Current(ctx)
 			if err != nil {
 				return runtime.WrapError(err, 1)
 			}
@@ -83,16 +84,16 @@ func newOrbitNextCommand() *cobra.Command {
 			}
 
 			nextName := seq[(idx+1)%len(seq)]
-			if err := svc.setOrbit(ctx, nextName); err != nil {
+			if err := svc.Set(ctx, nextName); err != nil {
 				return runtime.WrapError(err, 1)
 			}
 
-			record, err := svc.orbitRecord(ctx, nextName)
+			record, err := svc.Record(ctx, nextName)
 			if err != nil {
 				return runtime.WrapError(err, 1)
 			}
 
-			if err := printOrbit(cmd, record); err != nil {
+			if err := orbit.Print(cmd.OutOrStdout(), record); err != nil {
 				return runtime.WrapError(err, 1)
 			}
 			return nil
@@ -106,13 +107,13 @@ func newOrbitPrevCommand() *cobra.Command {
 		Short: "Switch to the previous orbit",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			svc, err := newOrbitService(cmd.Context())
+			svc, err := orbit.NewService(cmd.Context())
 			if err != nil {
 				return err
 			}
 
 			ctx := cmd.Context()
-			seq, err := svc.sequence(ctx)
+			seq, err := svc.Sequence(ctx)
 			if err != nil {
 				return runtime.WrapError(err, 1)
 			}
@@ -120,7 +121,7 @@ func newOrbitPrevCommand() *cobra.Command {
 				return runtime.WrapError(fmt.Errorf("orbit: no orbits configured"), 1)
 			}
 
-			current, err := svc.currentOrbit(ctx)
+			current, err := svc.Current(ctx)
 			if err != nil {
 				return runtime.WrapError(err, 1)
 			}
@@ -135,16 +136,16 @@ func newOrbitPrevCommand() *cobra.Command {
 				prevIdx = len(seq) - 1
 			}
 			prevName := seq[prevIdx]
-			if err := svc.setOrbit(ctx, prevName); err != nil {
+			if err := svc.Set(ctx, prevName); err != nil {
 				return runtime.WrapError(err, 1)
 			}
 
-			record, err := svc.orbitRecord(ctx, prevName)
+			record, err := svc.Record(ctx, prevName)
 			if err != nil {
 				return runtime.WrapError(err, 1)
 			}
 
-			if err := printOrbit(cmd, record); err != nil {
+			if err := orbit.Print(cmd.OutOrStdout(), record); err != nil {
 				return runtime.WrapError(err, 1)
 			}
 			return nil
@@ -158,7 +159,7 @@ func newOrbitSetCommand() *cobra.Command {
 		Short: "Activate a specific orbit",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			svc, err := newOrbitService(cmd.Context())
+			svc, err := orbit.NewService(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -166,16 +167,16 @@ func newOrbitSetCommand() *cobra.Command {
 			target := args[0]
 			ctx := cmd.Context()
 
-			record, err := svc.orbitRecord(ctx, target)
+			record, err := svc.Record(ctx, target)
 			if err != nil {
 				return runtime.WrapError(err, 2)
 			}
 
-			if err := svc.setOrbit(ctx, target); err != nil {
+			if err := svc.Set(ctx, target); err != nil {
 				return runtime.WrapError(err, 1)
 			}
 
-			if err := printOrbit(cmd, record); err != nil {
+			if err := orbit.Print(cmd.OutOrStdout(), record); err != nil {
 				return runtime.WrapError(err, 1)
 			}
 			return nil
