@@ -214,6 +214,22 @@ func (d *Dispatcher) handleModule(ctx context.Context, req ipc.Request) ipc.Resp
 			return resp
 		}
 		return resp
+	case "workspace-reset":
+		if err := d.resetWorkspaces(ctx); err != nil {
+			resp.Error = err.Error()
+			resp.ExitCode = 1
+			return resp
+		}
+		resp.Success = true
+		return resp
+	case "workspace-align":
+		if err := d.alignWorkspace(ctx); err != nil {
+			resp.Error = err.Error()
+			resp.ExitCode = 1
+			return resp
+		}
+		resp.Success = true
+		return resp
 	case "get":
 		return d.handleModuleGet(ctx)
 	}
@@ -378,6 +394,50 @@ func filterWorkspaceSummaries(summaries []module.WorkspaceSummary, filter string
 		}
 	}
 	return filtered
+}
+
+func (d *Dispatcher) resetWorkspaces(ctx context.Context) error {
+	hypr := d.state.HyprctlClient()
+	if hypr == nil {
+		return fmt.Errorf("hyprctl unavailable")
+	}
+	workspaces, err := hypr.Workspaces(ctx)
+	if err != nil {
+		return err
+	}
+	if len(workspaces) == 0 {
+		return nil
+	}
+	commands := make([][]string, 0, len(workspaces))
+	for _, ws := range workspaces {
+		commands = append(commands, []string{"dispatch", "killworkspace", "name:" + ws.Name})
+	}
+	if _, err := hypr.Batch(ctx, commands...); err != nil {
+		return fmt.Errorf("workspace reset: %w", err)
+	}
+	d.state.InvalidateClients()
+	return nil
+}
+
+func (d *Dispatcher) alignWorkspace(ctx context.Context) error {
+	hypr := d.state.HyprctlClient()
+	if hypr == nil {
+		return fmt.Errorf("hyprctl unavailable")
+	}
+	modSvc := d.state.ModuleService()
+	if modSvc == nil {
+		return fmt.Errorf("module service unavailable")
+	}
+	names := modSvc.ModuleNames()
+	if len(names) == 0 {
+		return fmt.Errorf("no modules configured")
+	}
+	record, err := modSvc.ActiveOrbit(ctx)
+	if err != nil {
+		return err
+	}
+	workspace := module.WorkspaceName(names[0], record.Name)
+	return hypr.SwitchWorkspace(ctx, workspace)
 }
 
 func focusOptionsFromFlags(flags map[string]any) (module.FocusOptions, error) {

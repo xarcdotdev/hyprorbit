@@ -203,6 +203,20 @@ func (c *Client) ModuleList(ctx context.Context, filter string) ([]module.Worksp
 	return summaries, nil
 }
 
+// WorkspaceReset instructs the daemon to reset active workspaces.
+func (c *Client) WorkspaceReset(ctx context.Context) error {
+	req := ipc.NewRequest("module", "workspace-reset")
+	_, err := c.Call(ctx, req, nil)
+	return err
+}
+
+// WorkspaceAlign moves focus to the first configured module/orbit workspace.
+func (c *Client) WorkspaceAlign(ctx context.Context) error {
+	req := ipc.NewRequest("module", "workspace-align")
+	_, err := c.Call(ctx, req, nil)
+	return err
+}
+
 // DaemonReload instructs the daemon to reload its configuration.
 func (c *Client) DaemonReload(ctx context.Context) error {
 	req := ipc.NewRequest("daemon", "reload")
