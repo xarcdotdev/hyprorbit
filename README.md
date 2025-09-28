@@ -2,10 +2,8 @@
 
 <!-- PROJECT LOGO -->
 <div align="center">
-  <a href="https://github.com/xarcdevdot/hyprorbits">
     <!-- <img src="docs/images/logo.png" alt="Logo" width="200" height="200"> -->
-    <div style="font-size: 5em; font-weight:bold">Ø</div>
-  </a>
+    <h1 style="font-size: 200px; font-weight:bold">Ø</h2>
 
 <h3 align="center">hyprorbits [WIP]</h3>
 
