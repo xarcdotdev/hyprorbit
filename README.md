@@ -2,10 +2,10 @@
 
 <!-- PROJECT LOGO -->
 <div align="center">
-    <!-- <img src="docs/images/logo.png" alt="Logo" width="200" height="200"> -->
-    <h1 style="font-size: 200px; font-weight:bold">Ø</h2>
+    <img src="docs/images/logo.webp" alt="Logo" width="200" height="200">
+    <!-- <h1>**Ø**</h1> -->
 
-<h3 align="center">hyprorbits [WIP]</h3>
+<h3 align="center">hyprorbits Ø</h3>
 
   <p align="center">
 Lightning-fast workspace orchestration for Hyprland - orbit-focused task switching with sub-5ms responsiveness.
