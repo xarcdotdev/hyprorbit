@@ -30,7 +30,7 @@ type Manager struct {
 	once    sync.Once
 	loadErr error
 
-	mu      sync.Mutex
+	mu      sync.RWMutex
 	current string
 
 	// cachedNames retains the sequence for repeated access without recomputing.
@@ -65,11 +65,20 @@ func (m *Manager) Current(ctx context.Context) (string, error) {
 	_ = ctx // reserved for future cancellation hooks when adding async caching.
 
 	m.once.Do(func() {
-		m.current, m.loadErr = m.load()
+		value, err := m.load()
+		if err != nil {
+			m.loadErr = err
+			return
+		}
+		m.mu.Lock()
+		m.current = value
+		m.mu.Unlock()
 	})
 	if m.loadErr != nil {
 		return "", m.loadErr
 	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	return m.current, nil
 }
 
@@ -85,8 +94,8 @@ func (m *Manager) Set(ctx context.Context, name string) error {
 	}
 
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	m.current = name
+	m.mu.Unlock()
 	return nil
 }
 
