@@ -2,9 +2,13 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
 
 	"hypr-orbits/internal/ipc"
+	"hypr-orbits/internal/module"
+	"hypr-orbits/internal/orbit"
 )
 
 // Dispatcher routes IPC requests to domain handlers.
@@ -19,15 +23,304 @@ func NewDispatcher(state *DaemonState) *Dispatcher {
 
 // Handle executes the request, returning a response suitable for IPC clients.
 func (d *Dispatcher) Handle(ctx context.Context, req ipc.Request) (ipc.Response, error) {
-	resp := ipc.NewResponse(false)
-
 	if req.Version != ipc.Version {
+		resp := ipc.NewResponse(false)
 		resp.Error = fmt.Sprintf("unsupported protocol version %d", req.Version)
 		resp.ExitCode = 1
 		return resp, nil
 	}
 
-	resp.Error = "dispatcher: not implemented"
-	resp.ExitCode = 1
-	return resp, nil
+	switch req.Command {
+	case "orbit":
+		return d.handleOrbit(ctx, req), nil
+	case "module":
+		return d.handleModule(ctx, req), nil
+	default:
+		resp := ipc.NewResponse(false)
+		resp.Error = fmt.Sprintf("unknown command %q", req.Command)
+		resp.ExitCode = 2
+		return resp, nil
+	}
+}
+
+func (d *Dispatcher) handleOrbit(ctx context.Context, req ipc.Request) ipc.Response {
+	resp := ipc.NewResponse(false)
+	svc := d.state.OrbitService()
+	if svc == nil {
+		resp.Error = "orbit service unavailable"
+		resp.ExitCode = 1
+		return resp
+	}
+
+	switch req.Action {
+	case "get":
+		name, err := svc.Current(ctx)
+		if err != nil {
+			resp.Error = err.Error()
+			resp.ExitCode = 1
+			return resp
+		}
+		record, err := svc.Record(ctx, name)
+		if err != nil {
+			resp.Error = err.Error()
+			resp.ExitCode = 1
+			return resp
+		}
+		if err := assignData(&resp, record); err != nil {
+			resp.Error = err.Error()
+			resp.ExitCode = 1
+			return resp
+		}
+		return resp
+	case "next":
+		return d.handleOrbitStep(ctx, svc, 1)
+	case "prev":
+		return d.handleOrbitStep(ctx, svc, -1)
+	case "set":
+		if len(req.Args) != 1 {
+			resp.Error = "orbit set requires exactly one argument"
+			resp.ExitCode = 2
+			return resp
+		}
+		target := req.Args[0]
+		record, err := svc.Record(ctx, target)
+		if err != nil {
+			resp.Error = err.Error()
+			resp.ExitCode = 2
+			return resp
+		}
+		if err := svc.Set(ctx, target); err != nil {
+			resp.Error = err.Error()
+			resp.ExitCode = 1
+			return resp
+		}
+		if err := assignData(&resp, record); err != nil {
+			resp.Error = err.Error()
+			resp.ExitCode = 1
+			return resp
+		}
+		return resp
+	default:
+		resp.Error = fmt.Sprintf("unknown orbit action %q", req.Action)
+		resp.ExitCode = 2
+		return resp
+	}
+}
+
+func (d *Dispatcher) handleOrbitStep(ctx context.Context, svc *orbit.Service, delta int) ipc.Response {
+	resp := ipc.NewResponse(false)
+	seq, err := svc.Sequence(ctx)
+	if err != nil {
+		resp.Error = err.Error()
+		resp.ExitCode = 1
+		return resp
+	}
+	if len(seq) == 0 {
+		resp.Error = "orbit: no orbits configured"
+		resp.ExitCode = 1
+		return resp
+	}
+	current, err := svc.Current(ctx)
+	if err != nil {
+		resp.Error = err.Error()
+		resp.ExitCode = 1
+		return resp
+	}
+	idx := indexOf(seq, current)
+	if idx == -1 {
+		resp.Error = fmt.Sprintf("orbit: current orbit %q not found", current)
+		resp.ExitCode = 1
+		return resp
+	}
+	var nextIdx int
+	if delta > 0 {
+		nextIdx = (idx + 1) % len(seq)
+	} else {
+		nextIdx = idx - 1
+		if nextIdx < 0 {
+			nextIdx = len(seq) - 1
+		}
+	}
+	name := seq[nextIdx]
+	if err := svc.Set(ctx, name); err != nil {
+		resp.Error = err.Error()
+		resp.ExitCode = 1
+		return resp
+	}
+	record, err := svc.Record(ctx, name)
+	if err != nil {
+		resp.Error = err.Error()
+		resp.ExitCode = 1
+		return resp
+	}
+	if err := assignData(&resp, record); err != nil {
+		resp.Error = err.Error()
+		resp.ExitCode = 1
+		return resp
+	}
+	return resp
+}
+
+func (d *Dispatcher) handleModule(ctx context.Context, req ipc.Request) ipc.Response {
+	resp := ipc.NewResponse(false)
+	svc := d.state.ModuleService()
+	if svc == nil {
+		resp.Error = "module service unavailable"
+		resp.ExitCode = 1
+		return resp
+	}
+
+	if len(req.Args) == 0 {
+		resp.Error = "module command requires a module name"
+		resp.ExitCode = 2
+		return resp
+	}
+	moduleName := req.Args[0]
+	if _, ok := svc.Module(moduleName); !ok {
+		available := strings.Join(svc.ModuleNames(), ", ")
+		resp.Error = fmt.Sprintf("module %q not configured (available: %s)", moduleName, available)
+		resp.ExitCode = 2
+		return resp
+	}
+
+	switch req.Action {
+	case "focus":
+		opts, err := focusOptionsFromFlags(req.Flags)
+		if err != nil {
+			resp.Error = err.Error()
+			resp.ExitCode = 2
+			return resp
+		}
+		result, err := svc.Focus(ctx, moduleName, opts)
+		if err != nil {
+			resp.Error = err.Error()
+			resp.ExitCode = 1
+			return resp
+		}
+		if err := assignData(&resp, result); err != nil {
+			resp.Error = err.Error()
+			resp.ExitCode = 1
+			return resp
+		}
+		return resp
+	case "jump":
+		result, err := svc.Jump(ctx, moduleName)
+		if err != nil {
+			resp.Error = err.Error()
+			resp.ExitCode = 1
+			return resp
+		}
+		if err := assignData(&resp, result); err != nil {
+			resp.Error = err.Error()
+			resp.ExitCode = 1
+			return resp
+		}
+		return resp
+	case "seed":
+		results, err := svc.Seed(ctx, moduleName)
+		if err != nil {
+			resp.Error = err.Error()
+			resp.ExitCode = 1
+			return resp
+		}
+		if results == nil {
+			results = []*module.Result{}
+		}
+		if err := assignData(&resp, results); err != nil {
+			resp.Error = err.Error()
+			resp.ExitCode = 1
+			return resp
+		}
+		return resp
+	default:
+		resp.Error = fmt.Sprintf("unknown module action %q", req.Action)
+		resp.ExitCode = 2
+		return resp
+	}
+}
+
+func focusOptionsFromFlags(flags map[string]any) (module.FocusOptions, error) {
+	var opts module.FocusOptions
+	if len(flags) == 0 {
+		return opts, nil
+	}
+	if matcher, ok := flags["matcher"]; ok {
+		str, ok := matcher.(string)
+		if !ok {
+			return opts, fmt.Errorf("module focus matcher must be a string")
+		}
+		opts.MatcherOverride = str
+	}
+	if cmd, ok := flags["cmd"]; ok {
+		switch v := cmd.(type) {
+		case []any:
+			for _, raw := range v {
+				str, ok := raw.(string)
+				if !ok {
+					return opts, fmt.Errorf("module focus cmd entries must be strings")
+				}
+				opts.CmdOverride = append(opts.CmdOverride, str)
+			}
+		case []string:
+			opts.CmdOverride = append(opts.CmdOverride, v...)
+		default:
+			return opts, fmt.Errorf("module focus cmd must be an array of strings")
+		}
+	}
+	if force, ok := flags["force_float"]; ok {
+		b, err := toBool(force)
+		if err != nil {
+			return opts, fmt.Errorf("module focus force_float must be boolean")
+		}
+		opts.ForceFloat = b
+	}
+	if noMove, ok := flags["no_move"]; ok {
+		b, err := toBool(noMove)
+		if err != nil {
+			return opts, fmt.Errorf("module focus no_move must be boolean")
+		}
+		opts.NoMove = b
+	}
+	return opts, nil
+}
+
+func toBool(v any) (bool, error) {
+	switch b := v.(type) {
+	case bool:
+		return b, nil
+	case string:
+		if b == "true" {
+			return true, nil
+		}
+		if b == "false" {
+			return false, nil
+		}
+		return false, fmt.Errorf("invalid boolean string %q", b)
+	default:
+		return false, fmt.Errorf("invalid boolean type %T", v)
+	}
+}
+
+func assignData(resp *ipc.Response, value any) error {
+	if value == nil {
+		resp.Success = true
+		resp.Data = nil
+		return nil
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	resp.Data = data
+	resp.Success = true
+	return nil
+}
+
+func indexOf(values []string, needle string) int {
+	for i, v := range values {
+		if v == needle {
+			return i
+		}
+	}
+	return -1
 }
