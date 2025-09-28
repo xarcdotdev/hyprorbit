@@ -1,5 +1,7 @@
 package ipc
 
+import "encoding/json"
+
 // Version identifies the IPC protocol version used by clients and daemon.
 const Version uint16 = 1
 
@@ -14,11 +16,11 @@ type Request struct {
 
 // Response represents the reply emitted by the daemon for a given request.
 type Response struct {
-	Version  uint16 `json:"version"`
-	Success  bool   `json:"success"`
-	Data     any    `json:"data,omitempty"`
-	Error    string `json:"error,omitempty"`
-	ExitCode int    `json:"exit_code"`
+	Version  uint16          `json:"version"`
+	Success  bool            `json:"success"`
+	Data     json.RawMessage `json:"data,omitempty"`
+	Error    string          `json:"error,omitempty"`
+	ExitCode int             `json:"exit_code"`
 }
 
 // NewRequest builds a request with the current protocol version applied.
