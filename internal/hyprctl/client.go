@@ -3,7 +3,6 @@ package hyprctl
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -15,23 +14,28 @@ import (
 
 // Options configures the hyprctl client.
 type Options struct {
-	Verbose bool
-	Timeout time.Duration
+	Verbose      bool
+	Timeout      time.Duration
+	CacheTTL     time.Duration
+	DisableCache bool
 }
 
 // Client wraps hyprctl command execution with caching helpers.
 type Client struct {
 	opts Options
 
-	once    sync.Once
-	clients []byte
-	err     error
+	cacheMu  sync.Mutex
+	clients  []byte
+	cachedAt time.Time
 }
 
 // NewClient constructs a hyprctl client with defaults.
 func NewClient(opts Options) *Client {
 	if opts.Timeout <= 0 {
 		opts.Timeout = 500 * time.Millisecond
+	}
+	if opts.CacheTTL < 0 {
+		opts.CacheTTL = 0
 	}
 	return &Client{opts: opts}
 }
@@ -44,13 +48,29 @@ func (c *Client) Dispatch(ctx context.Context, args ...string) error {
 
 // Clients returns the cached JSON output from `hyprctl clients -j`.
 func (c *Client) Clients(ctx context.Context) ([]byte, error) {
-	c.once.Do(func() {
-		c.clients, c.err = c.runCombined(ctx, "clients", "-j")
-	})
-	if c.err != nil {
-		return nil, c.err
+	if c.opts.DisableCache || c.opts.CacheTTL == 0 {
+		return c.fetchClients(ctx)
 	}
-	return c.clients, nil
+
+	c.cacheMu.Lock()
+	if len(c.clients) > 0 && time.Since(c.cachedAt) < c.opts.CacheTTL {
+		data := append([]byte(nil), c.clients...)
+		c.cacheMu.Unlock()
+		return data, nil
+	}
+	c.cacheMu.Unlock()
+
+	data, err := c.fetchClients(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	c.cacheMu.Lock()
+	c.clients = append(c.clients[:0], data...)
+	c.cachedAt = time.Now()
+	c.cacheMu.Unlock()
+
+	return append([]byte(nil), data...), nil
 }
 
 // DecodeClients unmarshals the clients JSON into the provided slice pointer.
@@ -59,13 +79,7 @@ func (c *Client) DecodeClients(ctx context.Context, out any) error {
 	if err != nil {
 		return err
 	}
-	if len(data) == 0 {
-		return nil
-	}
-	if err := json.Unmarshal(data, out); err != nil {
-		return fmt.Errorf("hyprctl: decode clients: %w", err)
-	}
-	return nil
+	return DecodeClientsPayload(data, out)
 }
 
 func (c *Client) run(ctx context.Context, args ...string) error {
@@ -116,4 +130,20 @@ func withTimeout(parent context.Context, dur time.Duration) (context.Context, co
 		return context.WithCancel(parent)
 	}
 	return context.WithTimeout(parent, dur)
+}
+
+// InvalidateClients clears any cached clients payload.
+func (c *Client) InvalidateClients() {
+	c.cacheMu.Lock()
+	defer c.cacheMu.Unlock()
+	c.clients = nil
+	c.cachedAt = time.Time{}
+}
+
+func (c *Client) fetchClients(ctx context.Context) ([]byte, error) {
+	data, err := c.runCombined(ctx, "clients", "-j")
+	if err != nil {
+		return nil, err
+	}
+	return append([]byte(nil), data...), nil
 }

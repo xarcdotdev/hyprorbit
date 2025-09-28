@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"hypr-orbits/internal/config"
+	"hypr-orbits/internal/hyprctl"
 	"hypr-orbits/internal/orbit"
 	"hypr-orbits/internal/runtime"
 )
@@ -35,7 +36,7 @@ type Service struct {
 	hyprctl  runtime.HyprctlClient
 
 	clientsOnce sync.Once
-	clientCache []hyprClient
+	clientCache []hyprctl.ClientInfo
 	clientErr   error
 }
 
@@ -254,9 +255,9 @@ func (s *Service) workspace(ctx context.Context, moduleName string) (config.Modu
 	return mod, orbitRecord, ws, nil
 }
 
-func (s *Service) clients(ctx context.Context) ([]hyprClient, error) {
+func (s *Service) clients(ctx context.Context) ([]hyprctl.ClientInfo, error) {
 	s.clientsOnce.Do(func() {
-		var out []hyprClient
+		var out []hyprctl.ClientInfo
 		err := s.hyprctl.DecodeClients(ctx, &out)
 		if err != nil {
 			s.clientErr = err
@@ -285,54 +286,16 @@ func spawnProcess(ctx context.Context, command []string) error {
 	return nil
 }
 
-type hyprClient struct {
-	Address       string `json:"address"`
-	Class         string `json:"class"`
-	Title         string `json:"title"`
-	InitialClass  string `json:"initialClass"`
-	InitialTitle  string `json:"initialTitle"`
-	Floating      bool   `json:"floating"`
-	WorkspaceInfo struct {
-		ID   int    `json:"id"`
-		Name string `json:"name"`
-	} `json:"workspace"`
-}
-
-func (c hyprClient) workspaceName() string {
-	if c.WorkspaceInfo.Name != "" {
-		return c.WorkspaceInfo.Name
-	}
-	if c.WorkspaceInfo.ID != 0 {
-		return fmt.Sprintf("%d", c.WorkspaceInfo.ID)
-	}
-	return ""
-}
-
-func (c hyprClient) fieldValue(field string) string {
-	switch strings.ToLower(field) {
-	case "class":
-		return c.Class
-	case "title":
-		return c.Title
-	case "initialclass":
-		return c.InitialClass
-	case "initialtitle":
-		return c.InitialTitle
-	default:
-		return ""
-	}
-}
-
-func bucketClients(clients []hyprClient, matcher config.Matcher, compiled *regexp.Regexp, workspace string, orbitName string) ([]hyprClient, []hyprClient) {
-	workspaceMatches := make([]hyprClient, 0)
-	orbitMatches := make([]hyprClient, 0)
+func bucketClients(clients []hyprctl.ClientInfo, matcher config.Matcher, compiled *regexp.Regexp, workspace string, orbitName string) ([]hyprctl.ClientInfo, []hyprctl.ClientInfo) {
+	workspaceMatches := make([]hyprctl.ClientInfo, 0)
+	orbitMatches := make([]hyprctl.ClientInfo, 0)
 	suffix := "-" + orbitName
 	for _, client := range clients {
-		value := client.fieldValue(matcher.Field)
+		value := client.FieldValue(matcher.Field)
 		if !matches(compiled, matcher.Expr, value) {
 			continue
 		}
-		ws := client.workspaceName()
+		ws := client.WorkspaceName()
 		if ws == workspace {
 			workspaceMatches = append(workspaceMatches, client)
 			continue
@@ -344,9 +307,9 @@ func bucketClients(clients []hyprClient, matcher config.Matcher, compiled *regex
 	return workspaceMatches, orbitMatches
 }
 
-func hasWorkspaceClients(clients []hyprClient, workspace string) bool {
+func hasWorkspaceClients(clients []hyprctl.ClientInfo, workspace string) bool {
 	for _, client := range clients {
-		if client.workspaceName() == workspace {
+		if client.WorkspaceName() == workspace {
 			return true
 		}
 	}

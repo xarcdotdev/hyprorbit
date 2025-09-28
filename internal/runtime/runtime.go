@@ -48,6 +48,7 @@ type HyprctlClient interface {
 	Dispatch(ctx context.Context, args ...string) error
 	Clients(ctx context.Context) ([]byte, error)
 	DecodeClients(ctx context.Context, out any) error
+	InvalidateClients()
 }
 
 // Bootstrap assembles the runtime dependencies for a CLI invocation.

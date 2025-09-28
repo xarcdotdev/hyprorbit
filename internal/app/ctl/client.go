@@ -176,3 +176,10 @@ func (c *Client) ModuleSeed(ctx context.Context, moduleName string) ([]*module.R
 	}
 	return results, nil
 }
+
+// DaemonReload instructs the daemon to reload its configuration.
+func (c *Client) DaemonReload(ctx context.Context) error {
+	req := ipc.NewRequest("daemon", "reload")
+	_, err := c.Call(ctx, req, nil)
+	return err
+}

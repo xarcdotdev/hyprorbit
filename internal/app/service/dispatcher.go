@@ -35,11 +35,31 @@ func (d *Dispatcher) Handle(ctx context.Context, req ipc.Request) (ipc.Response,
 		return d.handleOrbit(ctx, req), nil
 	case "module":
 		return d.handleModule(ctx, req), nil
+	case "daemon":
+		return d.handleDaemon(ctx, req), nil
 	default:
 		resp := ipc.NewResponse(false)
 		resp.Error = fmt.Sprintf("unknown command %q", req.Command)
 		resp.ExitCode = 2
 		return resp, nil
+	}
+}
+
+func (d *Dispatcher) handleDaemon(ctx context.Context, req ipc.Request) ipc.Response {
+	resp := ipc.NewResponse(false)
+	switch req.Action {
+	case "reload":
+		if err := d.state.Reload(ctx); err != nil {
+			resp.Error = err.Error()
+			resp.ExitCode = 1
+			return resp
+		}
+		resp.Success = true
+		return resp
+	default:
+		resp.Error = fmt.Sprintf("unknown daemon action %q", req.Action)
+		resp.ExitCode = 2
+		return resp
 	}
 }
 
