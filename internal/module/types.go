@@ -1,6 +1,11 @@
 package module
 
-import "hypr-orbits/internal/config"
+import (
+	"hypr-orbits/internal/config"
+	"hypr-orbits/internal/orbit"
+	"fmt"
+	"strings"
+)
 
 // Result captures the outcome of a module operation exposed to callers.
 type Result struct {

@@ -177,6 +177,22 @@ func (c *Client) ModuleSeed(ctx context.Context, moduleName string) ([]*module.R
 	return results, nil
 }
 
+// ModuleList retrieves workspace summaries for configured and active workspaces.
+func (c *Client) ModuleList(ctx context.Context, filter string) ([]module.WorkspaceSummary, error) {
+	req := ipc.NewRequest("module", "list")
+	if filter != "" {
+		req.Flags = map[string]any{"filter": filter}
+	}
+	var summaries []module.WorkspaceSummary
+	if _, err := c.Call(ctx, req, &summaries); err != nil {
+		return nil, err
+	}
+	if summaries == nil {
+		summaries = []module.WorkspaceSummary{}
+	}
+	return summaries, nil
+}
+
 // DaemonReload instructs the daemon to reload its configuration.
 func (c *Client) DaemonReload(ctx context.Context) error {
 	req := ipc.NewRequest("daemon", "reload")

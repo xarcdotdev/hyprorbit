@@ -40,6 +40,21 @@ type Service struct {
 	clientErr   error
 }
 
+// WorkspaceSummary describes the relationship between configured modules and Hyprland workspaces.
+type WorkspaceSummary struct {
+	Name            string `json:"name"`
+	Module          string `json:"module,omitempty"`
+	Orbit           string `json:"orbit,omitempty"`
+	Configured      bool   `json:"configured"`
+	Exists          bool   `json:"exists"`
+	Special         bool   `json:"special,omitempty"`
+	Windows         int    `json:"windows,omitempty"`
+	Monitor         string `json:"monitor,omitempty"`
+	HasFullscreen   bool   `json:"has_fullscreen,omitempty"`
+	LastWindow      string `json:"last_window,omitempty"`
+	LastWindowTitle string `json:"last_window_title,omitempty"`
+}
+
 // NewService wires module-specific helpers using runtime stored in context.
 func NewService(ctx context.Context) (*Service, error) {
 	rt, err := runtime.FromContext(ctx)
@@ -238,6 +253,75 @@ func (s *Service) Seed(ctx context.Context, moduleName string) ([]*Result, error
 		return []*Result{{Action: "seed-empty", Workspace: workspace}}, nil
 	}
 	return results, nil
+}
+
+// WorkspaceSummaries returns configured and active workspace metadata.
+func (s *Service) WorkspaceSummaries(ctx context.Context) ([]WorkspaceSummary, error) {
+	if s.cfg == nil {
+		return nil, fmt.Errorf("module: config unavailable")
+	}
+	if s.hyprctl == nil {
+		return nil, fmt.Errorf("module: hyprctl dependency is required")
+	}
+
+	workspaces, err := s.hyprctl.Workspaces(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	existing := make(map[string]hyprctl.Workspace, len(workspaces))
+	for _, ws := range workspaces {
+		existing[ws.Name] = ws
+	}
+
+	summaries := make([]WorkspaceSummary, 0, len(s.cfg.Modules)*len(s.cfg.Orbits)+len(existing))
+	seen := make(map[string]struct{}, len(existing))
+
+	for moduleName := range s.cfg.Modules {
+		for _, orbitRecord := range s.cfg.Orbits {
+			name := WorkspaceName(moduleName, orbitRecord.Name)
+			ws, ok := existing[name]
+			summary := WorkspaceSummary{
+				Name:       name,
+				Module:     moduleName,
+				Orbit:      orbitRecord.Name,
+				Configured: true,
+				Exists:     ok,
+			}
+			if ok {
+				summary.Windows = ws.Windows
+				summary.Monitor = ws.Monitor
+				summary.HasFullscreen = ws.HasFullscreen
+				summary.LastWindow = ws.LastWindow
+				summary.LastWindowTitle = ws.LastWindowTitle
+				seen[name] = struct{}{}
+			}
+			summaries = append(summaries, summary)
+		}
+	}
+
+	for name, ws := range existing {
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		summaries = append(summaries, WorkspaceSummary{
+			Name:            name,
+			Configured:      false,
+			Exists:          true,
+			Special:         true,
+			Windows:         ws.Windows,
+			Monitor:         ws.Monitor,
+			HasFullscreen:   ws.HasFullscreen,
+			LastWindow:      ws.LastWindow,
+			LastWindowTitle: ws.LastWindowTitle,
+		})
+	}
+
+	sort.Slice(summaries, func(i, j int) bool {
+		return summaries[i].Name < summaries[j].Name
+	})
+
+	return summaries, nil
 }
 
 func (s *Service) workspace(ctx context.Context, moduleName string) (config.ModuleRecord, *orbit.Record, string, error) {

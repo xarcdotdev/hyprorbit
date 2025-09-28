@@ -192,6 +192,28 @@ func (d *Dispatcher) handleModule(ctx context.Context, req ipc.Request) ipc.Resp
 		return resp
 	}
 
+	if req.Action == "list" {
+		filter, err := listFilterFromFlags(req.Flags)
+		if err != nil {
+			resp.Error = err.Error()
+			resp.ExitCode = 2
+			return resp
+		}
+		summaries, err := svc.WorkspaceSummaries(ctx)
+		if err != nil {
+			resp.Error = err.Error()
+			resp.ExitCode = 1
+			return resp
+		}
+		filtered := filterWorkspaceSummaries(summaries, filter)
+		if err := assignData(&resp, filtered); err != nil {
+			resp.Error = err.Error()
+			resp.ExitCode = 1
+			return resp
+		}
+		return resp
+	}
+
 	if len(req.Args) == 0 {
 		resp.Error = "module command requires a module name"
 		resp.ExitCode = 2
@@ -259,6 +281,46 @@ func (d *Dispatcher) handleModule(ctx context.Context, req ipc.Request) ipc.Resp
 		resp.ExitCode = 2
 		return resp
 	}
+}
+
+func listFilterFromFlags(flags map[string]any) (string, error) {
+	if len(flags) == 0 {
+		return "all", nil
+	}
+	raw, ok := flags["filter"]
+	if !ok {
+		return "all", nil
+	}
+	value, ok := raw.(string)
+	if !ok {
+		return "", fmt.Errorf("module list filter must be a string")
+	}
+	switch value {
+	case "all", "active", "inactive":
+		return value, nil
+	default:
+		return "", fmt.Errorf("module list filter %q not supported", value)
+	}
+}
+
+func filterWorkspaceSummaries(summaries []module.WorkspaceSummary, filter string) []module.WorkspaceSummary {
+	if filter == "all" {
+		return summaries
+	}
+	filtered := make([]module.WorkspaceSummary, 0, len(summaries))
+	for _, summary := range summaries {
+		switch filter {
+		case "active":
+			if summary.Configured && summary.Exists {
+				filtered = append(filtered, summary)
+			}
+		case "inactive":
+			if summary.Configured && !summary.Exists {
+				filtered = append(filtered, summary)
+			}
+		}
+	}
+	return filtered
 }
 
 func focusOptionsFromFlags(flags map[string]any) (module.FocusOptions, error) {
