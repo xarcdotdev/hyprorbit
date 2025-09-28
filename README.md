@@ -5,7 +5,7 @@
     <img src="docs/images/logo.webp" alt="Logo" width="250" height="250">
     <!-- <h1>**Ø**</h1> -->
 
-<h2 align="center">hyprØrbits</h2>
+<h2 align="center">hyprørbits</h2>
 
   <p align="center">
 Lightning-fast workspace orchestration for Hyprland - orbit-focused task switching with sub-5ms responsiveness.
