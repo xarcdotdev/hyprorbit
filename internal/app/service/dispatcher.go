@@ -10,6 +10,7 @@ import (
 	"hypr-orbits/internal/ipc"
 	"hypr-orbits/internal/module"
 	"hypr-orbits/internal/orbit"
+	"hypr-orbits/internal/runtime"
 )
 
 // Dispatcher routes IPC requests to domain handlers.
@@ -451,14 +452,51 @@ func (d *Dispatcher) alignWorkspace(ctx context.Context) error {
 	// Move current active workspace windows into the target before switching.
 	ws, err := hypr.ActiveWorkspace(ctx)
 	if err == nil && ws != nil {
+		if err := d.ensureWorkspaceExists(ctx, hypr, workspace, ws.Name); err != nil {
+			return err
+		}
+
 		clients := d.collectClients(ctx)
-		for _, client := range clients {
-			if client.Workspace.Name == ws.Name && client.Address != "" {
-				_ = hypr.MoveToWorkspace(ctx, client.Address, workspace)
-			}
+		moveErr := d.moveClientsToWorkspace(ctx, hypr, clients, ws.Name, workspace)
+		if moveErr != nil {
+			return moveErr
 		}
 	}
 	return hypr.SwitchWorkspace(ctx, workspace)
+}
+
+func (d *Dispatcher) ensureWorkspaceExists(ctx context.Context, hypr runtime.HyprctlClient, target, origin string) error {
+	if target == "" {
+		return fmt.Errorf("workspace: target name missing")
+	}
+	if err := hypr.SwitchWorkspace(ctx, target); err != nil {
+		return err
+	}
+	if origin != "" && origin != target {
+		if err := hypr.SwitchWorkspace(ctx, origin); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (d *Dispatcher) moveClientsToWorkspace(ctx context.Context, hypr runtime.HyprctlClient, clients []hyprctl.ClientInfo, origin, target string) error {
+	if origin == "" || target == "" {
+		return nil
+	}
+	var firstErr error
+	for _, client := range clients {
+		if client.Address == "" {
+			continue
+		}
+		if client.Workspace.Name != origin {
+			continue
+		}
+		if err := hypr.MoveToWorkspace(ctx, client.Address, target); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
 }
 
 func (d *Dispatcher) collectClients(ctx context.Context) []hyprctl.ClientInfo {
