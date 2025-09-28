@@ -15,11 +15,24 @@ import (
 	"hypr-orbits/internal/runtime"
 )
 
-// Service exposes module-focused orchestration helpers backed by runtime dependencies.
+// OrbitAccessor captures the orbit functionality required by the module service.
+type OrbitAccessor interface {
+	Current(ctx context.Context) (string, error)
+	Record(ctx context.Context, name string) (*orbit.Record, error)
+}
+
+// Dependencies wires the collaborators required to build a module service instance.
+type Dependencies struct {
+	Config  *config.EffectiveConfig
+	Orbit   OrbitAccessor
+	Hyprctl runtime.HyprctlClient
+}
+
+// Service exposes module-focused orchestration helpers backed by shared dependencies.
 type Service struct {
-	runtime  *runtime.Runtime
 	cfg      *config.EffectiveConfig
-	orbitSvc *orbit.Service
+	orbitSvc OrbitAccessor
+	hyprctl  runtime.HyprctlClient
 
 	clientsOnce sync.Once
 	clientCache []hyprClient
@@ -40,17 +53,46 @@ func NewService(ctx context.Context) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Service{runtime: rt, cfg: cfg, orbitSvc: orbitSvc}, nil
+	deps := Dependencies{
+		Config:  cfg,
+		Orbit:   orbitSvc,
+		Hyprctl: rt.Dependencies().HyprctlClient,
+	}
+	return NewServiceWithDependencies(deps)
+}
+
+// NewServiceWithDependencies constructs a module service from explicit collaborators.
+func NewServiceWithDependencies(deps Dependencies) (*Service, error) {
+	if deps.Config == nil {
+		return nil, fmt.Errorf("module: config dependency is required")
+	}
+	if deps.Orbit == nil {
+		return nil, fmt.Errorf("module: orbit dependency is required")
+	}
+	if deps.Hyprctl == nil {
+		return nil, fmt.Errorf("module: hyprctl dependency is required")
+	}
+	return &Service{
+		cfg:      deps.Config,
+		orbitSvc: deps.Orbit,
+		hyprctl:  deps.Hyprctl,
+	}, nil
 }
 
 // Module retrieves a module definition by name if present.
 func (s *Service) Module(name string) (config.ModuleRecord, bool) {
+	if s.cfg == nil {
+		return config.ModuleRecord{}, false
+	}
 	mod, ok := s.cfg.Modules[name]
 	return mod, ok
 }
 
 // ModuleNames returns the configured module identifiers in sorted order.
 func (s *Service) ModuleNames() []string {
+	if s.cfg == nil {
+		return nil
+	}
 	names := make([]string, 0, len(s.cfg.Modules))
 	for name := range s.cfg.Modules {
 		names = append(names, name)
@@ -113,13 +155,13 @@ func (s *Service) Focus(ctx context.Context, moduleName string, opts FocusOption
 
 	if len(workspaceClients) > 0 {
 		client := workspaceClients[0]
-		if err := s.hyprctl().Dispatch(ctx, "workspace", "name:"+workspace); err != nil {
+		if err := s.hyprctl.Dispatch(ctx, "workspace", "name:"+workspace); err != nil {
 			return nil, err
 		}
 		if shouldFloat && !client.Floating {
-			_ = s.hyprctl().Dispatch(ctx, "togglefloating", "address:"+client.Address)
+			_ = s.hyprctl.Dispatch(ctx, "togglefloating", "address:"+client.Address)
 		}
-		if err := s.hyprctl().Dispatch(ctx, "focuswindow", "address:"+client.Address); err != nil {
+		if err := s.hyprctl.Dispatch(ctx, "focuswindow", "address:"+client.Address); err != nil {
 			return nil, err
 		}
 		return &Result{Action: "focused", Workspace: workspace}, nil
@@ -127,16 +169,16 @@ func (s *Service) Focus(ctx context.Context, moduleName string, opts FocusOption
 
 	if allowMove && len(orbitClients) > 0 {
 		client := orbitClients[0]
-		if err := s.hyprctl().Dispatch(ctx, "movetoworkspace", "name:"+workspace, "address:"+client.Address); err != nil {
+		if err := s.hyprctl.Dispatch(ctx, "movetoworkspace", "name:"+workspace, "address:"+client.Address); err != nil {
 			return nil, err
 		}
-		if err := s.hyprctl().Dispatch(ctx, "workspace", "name:"+workspace); err != nil {
+		if err := s.hyprctl.Dispatch(ctx, "workspace", "name:"+workspace); err != nil {
 			return nil, err
 		}
 		if shouldFloat && !client.Floating {
-			_ = s.hyprctl().Dispatch(ctx, "togglefloating", "address:"+client.Address)
+			_ = s.hyprctl.Dispatch(ctx, "togglefloating", "address:"+client.Address)
 		}
-		if err := s.hyprctl().Dispatch(ctx, "focuswindow", "address:"+client.Address); err != nil {
+		if err := s.hyprctl.Dispatch(ctx, "focuswindow", "address:"+client.Address); err != nil {
 			return nil, err
 		}
 		return &Result{Action: "moved", Workspace: workspace}, nil
@@ -146,7 +188,7 @@ func (s *Service) Focus(ctx context.Context, moduleName string, opts FocusOption
 		return nil, fmt.Errorf("module %s: no matching clients and no command to spawn", moduleName)
 	}
 
-	if err := s.hyprctl().Dispatch(ctx, "workspace", "name:"+workspace); err != nil {
+	if err := s.hyprctl.Dispatch(ctx, "workspace", "name:"+workspace); err != nil {
 		return nil, err
 	}
 	if err := spawnProcess(ctx, spawnCmd); err != nil {
@@ -161,7 +203,7 @@ func (s *Service) Jump(ctx context.Context, moduleName string) (*Result, error) 
 	if err != nil {
 		return nil, err
 	}
-	if err := s.hyprctl().Dispatch(ctx, "workspace", "name:"+workspace); err != nil {
+	if err := s.hyprctl.Dispatch(ctx, "workspace", "name:"+workspace); err != nil {
 		return nil, err
 	}
 	return &Result{Action: "jumped", Workspace: workspace, Orbit: orbitRecord.Name}, nil
@@ -212,14 +254,10 @@ func (s *Service) workspace(ctx context.Context, moduleName string) (config.Modu
 	return mod, orbitRecord, ws, nil
 }
 
-func (s *Service) hyprctl() runtime.HyprctlClient {
-	return s.runtime.Dependencies().HyprctlClient
-}
-
 func (s *Service) clients(ctx context.Context) ([]hyprClient, error) {
 	s.clientsOnce.Do(func() {
 		var out []hyprClient
-		err := s.hyprctl().DecodeClients(ctx, &out)
+		err := s.hyprctl.DecodeClients(ctx, &out)
 		if err != nil {
 			s.clientErr = err
 			return
@@ -313,4 +351,11 @@ func hasWorkspaceClients(clients []hyprClient, workspace string) bool {
 		}
 	}
 	return false
+}
+
+// ResetClientCache clears the memoized hyprctl client listing.
+func (s *Service) ResetClientCache() {
+	s.clientsOnce = sync.Once{}
+	s.clientCache = nil
+	s.clientErr = nil
 }

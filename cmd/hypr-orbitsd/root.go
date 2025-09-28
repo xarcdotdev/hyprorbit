@@ -2,10 +2,14 @@ package main
 
 import (
 	"context"
-	"errors"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
+
+	"hypr-orbits/internal/app/service"
 )
 
 func execute() int {
@@ -33,7 +37,7 @@ func newRootCommand() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: false,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return errors.New("hypr-orbitsd daemon not yet implemented")
+			return runServer(cmd.Context(), collectOptions(cmd.Flags(), cfgPath, socketPath, logLevel, logFormat, cacheTTL, disableCache))
 		},
 	}
 
@@ -47,4 +51,35 @@ func newRootCommand() *cobra.Command {
 	cmd.MarkFlagsMutuallyExclusive("cache-ttl", "no-cache")
 
 	return cmd
+}
+
+func collectOptions(flags *pflag.FlagSet, cfgPath, socketPath, logLevel, logFormat string, cacheTTL time.Duration, disableCache bool) service.Options {
+	if flags != nil {
+		cfgPath, _ = flags.GetString("config")
+		socketPath, _ = flags.GetString("socket")
+		logLevel, _ = flags.GetString("log-level")
+		logFormat, _ = flags.GetString("log-format")
+		cacheTTL, _ = flags.GetDuration("cache-ttl")
+		disableCache, _ = flags.GetBool("no-cache")
+	}
+
+	return service.Options{
+		ConfigPath:   cfgPath,
+		SocketPath:   socketPath,
+		LogLevel:     logLevel,
+		LogFormat:    logFormat,
+		CacheTTL:     cacheTTL,
+		DisableCache: disableCache,
+	}
+}
+
+func runServer(ctx context.Context, opts service.Options) error {
+	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+
+	srv, err := service.NewServer(ctx, opts)
+	if err != nil {
+		return err
+	}
+	return srv.Serve(ctx)
 }
