@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"hypr-orbits/internal/hyprctl"
 	"hypr-orbits/internal/ipc"
 	"hypr-orbits/internal/module"
 	"hypr-orbits/internal/orbit"
@@ -192,7 +193,8 @@ func (d *Dispatcher) handleModule(ctx context.Context, req ipc.Request) ipc.Resp
 		return resp
 	}
 
-	if req.Action == "list" {
+	switch req.Action {
+	case "list":
 		filter, err := listFilterFromFlags(req.Flags)
 		if err != nil {
 			resp.Error = err.Error()
@@ -212,6 +214,8 @@ func (d *Dispatcher) handleModule(ctx context.Context, req ipc.Request) ipc.Resp
 			return resp
 		}
 		return resp
+	case "get":
+		return d.handleModuleGet(ctx)
 	}
 
 	if len(req.Args) == 0 {
@@ -281,6 +285,59 @@ func (d *Dispatcher) handleModule(ctx context.Context, req ipc.Request) ipc.Resp
 		resp.ExitCode = 2
 		return resp
 	}
+}
+
+func (d *Dispatcher) handleModuleGet(ctx context.Context) ipc.Response {
+	resp := ipc.NewResponse(false)
+	svc := d.state.ModuleService()
+	if svc == nil {
+		resp.Error = "module service unavailable"
+		resp.ExitCode = 1
+		return resp
+	}
+
+	hyprClient := d.state.HyprctlClient()
+	activeGetter, ok := hyprClient.(interface {
+		ActiveWorkspace(context.Context) (*hyprctl.Workspace, error)
+	})
+	if !ok || activeGetter == nil {
+		resp.Error = "hyprctl client does not expose active workspace"
+		resp.ExitCode = 1
+		return resp
+	}
+
+	ws, err := activeGetter.ActiveWorkspace(ctx)
+	if err != nil {
+		resp.Error = err.Error()
+		resp.ExitCode = 1
+		return resp
+	}
+	if ws == nil || ws.Name == "" {
+		resp.Error = "active workspace not available"
+		resp.ExitCode = 1
+		return resp
+	}
+
+	moduleName, orbitName, err := module.ParseWorkspaceName(ws.Name)
+	if err != nil {
+		resp.Error = err.Error()
+		resp.ExitCode = 2
+		return resp
+	}
+
+	status, err := svc.Status(ctx, moduleName, orbitName)
+	if err != nil {
+		resp.Error = err.Error()
+		resp.ExitCode = 2
+		return resp
+	}
+
+	if err := assignData(&resp, status); err != nil {
+		resp.Error = err.Error()
+		resp.ExitCode = 1
+		return resp
+	}
+	return resp
 }
 
 func listFilterFromFlags(flags map[string]any) (string, error) {

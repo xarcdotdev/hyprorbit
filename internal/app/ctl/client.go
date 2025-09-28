@@ -163,6 +163,16 @@ func (c *Client) ModuleJump(ctx context.Context, moduleName string) (*module.Res
 	return &res, nil
 }
 
+// ModuleGet returns metadata about the currently active module workspace.
+func (c *Client) ModuleGet(ctx context.Context) (*module.Status, error) {
+	req := ipc.NewRequest("module", "get")
+	var status module.Status
+	if _, err := c.Call(ctx, req, &status); err != nil {
+		return nil, err
+	}
+	return &status, nil
+}
+
 // ModuleSeed sequences the configured seed steps for a module.
 func (c *Client) ModuleSeed(ctx context.Context, moduleName string) ([]*module.Result, error) {
 	req := ipc.NewRequest("module", "seed")

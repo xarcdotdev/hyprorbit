@@ -52,6 +52,31 @@ func PrintModule(w io.Writer, opts Options, result *module.Result) error {
 	return err
 }
 
+// PrintModuleStatus prints the current module/orbit association.
+func PrintModuleStatus(w io.Writer, opts Options, status *module.Status) error {
+	if opts.Quiet {
+		return nil
+	}
+	if opts.JSON {
+		return encodeJSON(w, status)
+	}
+	if status == nil {
+		return fmt.Errorf("module: nothing to print")
+	}
+	parts := []string{status.Module, status.Workspace}
+	if status.Orbit.Name != "" {
+		parts = append(parts, status.Orbit.Name)
+	}
+	if status.Orbit.Label != "" {
+		parts = append(parts, status.Orbit.Label)
+	}
+	if status.Orbit.Color != "" {
+		parts = append(parts, status.Orbit.Color)
+	}
+	_, err := fmt.Fprintln(w, strings.Join(parts, "\t"))
+	return err
+}
+
 // PrintModuleList prints a slice of module results.
 func PrintModuleList(w io.Writer, opts Options, results []*module.Result) error {
 	if opts.Quiet {

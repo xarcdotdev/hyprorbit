@@ -117,6 +117,26 @@ func (s *Service) ModuleNames() []string {
 	return names
 }
 
+// Status returns metadata for the specified module within the given orbit.
+func (s *Service) Status(ctx context.Context, moduleName, orbitName string) (*Status, error) {
+	if _, ok := s.Module(moduleName); !ok {
+		return nil, fmt.Errorf("module %q not configured", moduleName)
+	}
+	record, err := s.orbitSvc.Record(ctx, orbitName)
+	if err != nil {
+		return nil, err
+	}
+	if record == nil {
+		return nil, fmt.Errorf("orbit %q not defined", orbitName)
+	}
+	workspace := WorkspaceName(moduleName, orbitName)
+	return &Status{
+		Module:    moduleName,
+		Workspace: workspace,
+		Orbit:     *record,
+	}, nil
+}
+
 // ActiveOrbit resolves the currently active orbit metadata.
 func (s *Service) ActiveOrbit(ctx context.Context) (*orbit.Record, error) {
 	name, err := s.orbitSvc.Current(ctx)

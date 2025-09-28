@@ -1,9 +1,9 @@
 package module
 
 import (
+	"fmt"
 	"hypr-orbits/internal/config"
 	"hypr-orbits/internal/orbit"
-	"fmt"
 	"strings"
 )
 
@@ -26,4 +26,29 @@ type FocusOptions struct {
 type SeedStep struct {
 	Matcher config.Matcher
 	Cmd     []string
+}
+
+// Status describes the current module/orbit workspace association.
+type Status struct {
+	Module    string       `json:"module"`
+	Workspace string       `json:"workspace"`
+	Orbit     orbit.Record `json:"orbit"`
+}
+
+// ParseWorkspaceName splits a workspace identifier into module and orbit components.
+func ParseWorkspaceName(workspace string) (moduleName, orbitName string, err error) {
+	workspace = strings.TrimSpace(workspace)
+	if workspace == "" {
+		return "", "", fmt.Errorf("module: workspace name cannot be empty")
+	}
+	idx := strings.LastIndex(workspace, "-")
+	if idx <= 0 || idx == len(workspace)-1 {
+		return "", "", fmt.Errorf("module: workspace %q does not follow <module>-<orbit>", workspace)
+	}
+	moduleName = workspace[:idx]
+	orbitName = workspace[idx+1:]
+	if moduleName == "" || orbitName == "" {
+		return "", "", fmt.Errorf("module: workspace %q does not follow <module>-<orbit>", workspace)
+	}
+	return moduleName, orbitName, nil
 }

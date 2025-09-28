@@ -93,6 +93,11 @@ func (s *DaemonState) ModuleService() *module.Service {
 	return s.moduleSvc
 }
 
+// HyprctlClient exposes the underlying hyprctl client.
+func (s *DaemonState) HyprctlClient() runtime.HyprctlClient {
+	return s.hyprctl
+}
+
 // InvalidateClients clears the cached hyprctl client listing.
 func (s *DaemonState) InvalidateClients() {
 	s.mu.Lock()
