@@ -1,21 +1,45 @@
-# Context labels (order matters)
-orbits: [ "α", "β", "γ", "δ" ]
+# Orbit definitions with names, labels, and colors
+orbits:
+  - name: "alpha"
+    label: "α"
+    color: "#BC83F9"
+  - name: "beta"
+    label: "β"
+    color: "#F97583"
+  - name: "gamma"
+    label: "γ"
+    color: "#85E89D"
+  - name: "delta"
+    label: "δ"
+    color: "#FFAB70"
 
-# Role → entries to match & launch (used by 'role seed' or your own binds)
-roles:
+# Module definitions with focus rules
+modules:
   code:
-    - match: 'class:^Code$'
-      cmd: 'code'
-    - match: 'class:^(Alacritty|kitty)$'
-      cmd: 'alacritty'
+    focus:
+      match: "class:^Code$"
+      cmd: ["code"]
+    seed:
+      - match: "class:^Code$"
+        cmd: ["code"]
+      - match: "class:^(Alacritty|kitty)$"
+        cmd: ["alacritty"]
   gfx:
-    - match: 'class:^(Firefox|Zen Browser)$'
-      cmd: 'firefox'
-    - match: 'class:^Gimp$'
-      cmd: 'gimp'
+    focus:
+      match: "class:^(Firefox|Zen Browser)$"
+      cmd: ["firefox"]
+    seed:
+      - match: "class:^(Firefox|Zen Browser)$"
+        cmd: ["firefox"]
+      - match: "class:^Gimp$"
+        cmd: ["gimp"]
   comm:
-    - match: 'class:^Thunderbird$'
-      cmd: 'thunderbird'
-    - match: 'class:^TelegramDesktop$'
-      cmd: 'telegram-desktop'
+    focus:
+      match: "class:^Thunderbird$"
+      cmd: ["thunderbird"]
+    seed:
+      - match: "class:^Thunderbird$"
+        cmd: ["thunderbird"]
+      - match: "class:^TelegramDesktop$"
+        cmd: ["telegram-desktop"]
 
