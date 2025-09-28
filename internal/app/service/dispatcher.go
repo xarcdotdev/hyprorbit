@@ -410,7 +410,14 @@ func (d *Dispatcher) resetWorkspaces(ctx context.Context) error {
 	}
 	commands := make([][]string, 0, len(workspaces))
 	for _, ws := range workspaces {
-		commands = append(commands, []string{"dispatch", "killworkspace", "name:" + ws.Name})
+		name := strings.TrimSpace(ws.Name)
+		if name == "" {
+			continue
+		}
+		if strings.HasPrefix(name, "special") {
+			continue
+		}
+		commands = append(commands, []string{"dispatch", "killworkspace", "name:" + name})
 	}
 	if _, err := hypr.Batch(ctx, commands...); err != nil {
 		return fmt.Errorf("workspace reset: %w", err)
@@ -437,7 +444,30 @@ func (d *Dispatcher) alignWorkspace(ctx context.Context) error {
 		return err
 	}
 	workspace := module.WorkspaceName(names[0], record.Name)
+
+	// Move current active workspace windows into the target before switching.
+	ws, err := hypr.ActiveWorkspace(ctx)
+	if err == nil && ws != nil {
+		clients := d.collectClients(ctx)
+		for _, client := range clients {
+			if client.Workspace.Name == ws.Name && client.Address != "" {
+				_ = hypr.MoveToWorkspace(ctx, client.Address, workspace)
+			}
+		}
+	}
 	return hypr.SwitchWorkspace(ctx, workspace)
+}
+
+func (d *Dispatcher) collectClients(ctx context.Context) []hyprctl.ClientInfo {
+	hypr := d.state.HyprctlClient()
+	if hypr == nil {
+		return nil
+	}
+	var clients []hyprctl.ClientInfo
+	if err := hypr.DecodeClients(ctx, &clients); err != nil {
+		return nil
+	}
+	return clients
 }
 
 func focusOptionsFromFlags(flags map[string]any) (module.FocusOptions, error) {

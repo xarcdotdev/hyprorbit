@@ -89,7 +89,7 @@ func PrintModuleList(w io.Writer, opts Options, results []*module.Result) error 
 		return encodeJSON(w, results)
 	}
 	for _, res := range results {
-		if err := PrintModule(w, Options{JSON: false, Quiet: false}, res); err != nil {
+		if err := PrintModule(w, Options{JSON: false, Quiet: false, NoColor: opts.NoColor}, res); err != nil {
 			return err
 		}
 	}
@@ -142,7 +142,8 @@ func PrintWorkspaceSummaries(w io.Writer, opts Options, summaries []module.Works
 	}
 
 	// Render header.
-	if err := printTableRow(w, headers, widths, nil); err != nil {
+	reset := colorOrEmpty(opts, ansiReset)
+	if err := printTableRow(w, headers, widths, nil, reset); err != nil {
 		return err
 	}
 
@@ -150,19 +151,19 @@ func PrintWorkspaceSummaries(w io.Writer, opts Options, summaries []module.Works
 		colors := make([]string, len(row))
 		switch row[1] {
 		case "active":
-			colors[1] = colorGreen
+			colors[1] = colorOrEmpty(opts, ansiGreen)
 		case "inactive":
-			colors[1] = colorGrey
+			colors[1] = colorOrEmpty(opts, ansiGrey)
 		default:
-			colors[1] = colorYellow
+			colors[1] = colorOrEmpty(opts, ansiYellow)
 		}
 		if row[2] != "-" {
-			colors[2] = colorCyan
+			colors[2] = colorOrEmpty(opts, ansiCyan)
 		}
 		if row[4] != "-" {
-			colors[4] = colorWhite
+			colors[4] = colorOrEmpty(opts, ansiWhite)
 		}
-		if err := printTableRow(w, row, widths, colors); err != nil {
+		if err := printTableRow(w, row, widths, colors, reset); err != nil {
 			return err
 		}
 	}
@@ -176,39 +177,37 @@ func encodeJSON(w io.Writer, v any) error {
 }
 
 const (
-	colorReset  = "\033[0m"
-	colorGreen  = "\033[32m"
-	colorGrey   = "\033[90m"
-	colorCyan   = "\033[36m"
-	colorWhite  = "\033[97m"
-	colorYellow = "\033[33m"
+	ansiReset  = "\033[0m"
+	ansiGreen  = "\033[32m"
+	ansiGrey   = "\033[90m"
+	ansiCyan   = "\033[36m"
+	ansiWhite  = "\033[97m"
+	ansiYellow = "\033[33m"
 )
 
-func printTableRow(w io.Writer, columns []string, widths []int, colors []string) error {
+func printTableRow(w io.Writer, columns []string, widths []int, colors []string, reset string) error {
 	for i, text := range columns {
 		color := ""
 		if colors != nil {
 			color = colors[i]
 		}
-		aligned := func() error {
-			if i == len(columns)-1 {
-				// last column (windows) right-aligned
-				if color != "" {
-					_, err := fmt.Fprintf(w, "%s%*s%s", color, widths[i], text, colorReset)
-					return err
-				}
-				_, err := fmt.Fprintf(w, "%*s", widths[i], text)
-				return err
-			}
+		var err error
+		if i == len(columns)-1 {
+			// last column right-aligned
 			if color != "" {
-				_, err := fmt.Fprintf(w, "%s%-*s%s", color, widths[i], text, colorReset)
-				return err
+				_, err = fmt.Fprintf(w, "%s%*s%s", color, widths[i], text, reset)
+			} else {
+				_, err = fmt.Fprintf(w, "%*s", widths[i], text)
 			}
-			_, err := fmt.Fprintf(w, "%-*s", widths[i], text)
+		} else {
+			if color != "" {
+				_, err = fmt.Fprintf(w, "%s%-*s%s", color, widths[i], text, reset)
+			} else {
+				_, err = fmt.Fprintf(w, "%-*s", widths[i], text)
+			}
+		}
+		if err != nil {
 			return err
-		}()
-		if aligned != nil {
-			return aligned
 		}
 		if i != len(columns)-1 {
 			if _, err := fmt.Fprint(w, "  "); err != nil {
@@ -229,4 +228,11 @@ func dashIfEmpty(value string) string {
 
 func runeLen(value string) int {
 	return utf8.RuneCountInString(value)
+}
+
+func colorOrEmpty(opts Options, code string) string {
+	if opts.NoColor {
+		return ""
+	}
+	return code
 }

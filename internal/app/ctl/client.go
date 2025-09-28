@@ -17,6 +17,7 @@ type Options struct {
 	JSON       bool
 	Quiet      bool
 	Timeout    time.Duration
+	NoColor    bool
 }
 
 // Client speaks the IPC protocol with the hypr-orbits daemon.
