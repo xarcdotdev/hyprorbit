@@ -2,7 +2,7 @@
 
 <!-- PROJECT LOGO -->
 <div align="center">
-    <img src="docs/images/logo.webp" alt="Logo" width="200" height="200">
+    <img src="docs/images/logo_transparent.webp" alt="Logo" width="200" height="200">
     <!-- <h1>**Ø**</h1> -->
 
 <h2 align="center">hyprØrbits</h2>
