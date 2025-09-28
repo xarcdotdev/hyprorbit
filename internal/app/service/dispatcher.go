@@ -49,6 +49,9 @@ func (d *Dispatcher) Handle(ctx context.Context, req ipc.Request) (ipc.Response,
 func (d *Dispatcher) handleDaemon(ctx context.Context, req ipc.Request) ipc.Response {
 	resp := ipc.NewResponse(false)
 	switch req.Action {
+	case "status":
+		resp.Success = true
+		return resp
 	case "reload":
 		if err := d.state.Reload(ctx); err != nil {
 			resp.Error = err.Error()

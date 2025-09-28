@@ -218,6 +218,13 @@ func (c *Client) WorkspaceAlign(ctx context.Context) error {
 	return err
 }
 
+// DaemonStatus checks whether the daemon is responsive.
+func (c *Client) DaemonStatus(ctx context.Context) error {
+	req := ipc.NewRequest("daemon", "status")
+	_, err := c.Call(ctx, req, nil)
+	return err
+}
+
 // DaemonReload instructs the daemon to reload its configuration.
 func (c *Client) DaemonReload(ctx context.Context) error {
 	req := ipc.NewRequest("daemon", "reload")
