@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"strings"
-	"unicode/utf8"
 
 	"hypr-orbits/internal/module"
 	"hypr-orbits/internal/orbit"
