@@ -457,7 +457,7 @@ func (d *Dispatcher) alignWorkspace(ctx context.Context) error {
 		}
 
 		clients := d.collectClients(ctx)
-		moveErr := d.moveClientsToWorkspace(ctx, hypr, clients, ws.Name, workspace)
+		moveErr := d.moveClientsToWorkspace(ctx, hypr, clients, workspace)
 		if moveErr != nil {
 			return moveErr
 		}
@@ -483,8 +483,8 @@ func (d *Dispatcher) ensureWorkspaceExists(ctx context.Context, hypr runtime.Hyp
 	return nil
 }
 
-func (d *Dispatcher) moveClientsToWorkspace(ctx context.Context, hypr runtime.HyprctlClient, clients []hyprctl.ClientInfo, origin, target string) error {
-	if origin == "" || target == "" {
+func (d *Dispatcher) moveClientsToWorkspace(ctx context.Context, hypr runtime.HyprctlClient, clients []hyprctl.ClientInfo, target string) error {
+	if target == "" {
 		return nil
 	}
 	var firstErr error
@@ -492,7 +492,11 @@ func (d *Dispatcher) moveClientsToWorkspace(ctx context.Context, hypr runtime.Hy
 		if client.Address == "" {
 			continue
 		}
-		if client.Workspace.Name != origin {
+		name := strings.TrimSpace(client.Workspace.Name)
+		if name == "" || name == target {
+			continue
+		}
+		if strings.HasPrefix(name, "special") {
 			continue
 		}
 		if err := hypr.MoveToWorkspace(ctx, client.Address, target); err != nil && firstErr == nil {

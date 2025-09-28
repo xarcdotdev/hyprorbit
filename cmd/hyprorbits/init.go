@@ -221,7 +221,12 @@ func (s *spinner) Update(msg string) {
 }
 
 func (s *spinner) Stop() {
-	close(s.stopCh)
+	select {
+	case <-s.stopCh:
+		// already closed
+	default:
+		close(s.stopCh)
+	}
 	fmt.Fprintf(s.out, "\r%*s\r", 80, "")
 }
 
