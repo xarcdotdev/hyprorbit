@@ -1,10 +1,10 @@
-hypr-orbits orbit get
-hypr-orbits orbit next|prev
-hypr-orbits orbit set <label>        # e.g. α
+hyprorbits orbit get
+hyprorbits orbit next|prev
+hyprorbits orbit set <label>        # e.g. α
 
-hypr-orbits role jump  <role>        # workspace name:<role>-<orbit>
-hypr-orbits role focus <role> --match <class:^Foo$|title:^Bar$|appid:^baz$> --cmd "<spawnline>"
-hypr-orbits role seed  <role>        # from config, if target workspace empty
+hyprorbits role jump  <role>        # workspace name:<role>-<orbit>
+hyprorbits role focus <role> --match <class:^Foo$|title:^Bar$|appid:^baz$> --cmd "<spawnline>"
+hyprorbits role seed  <role>        # from config, if target workspace empty
 
 Behavior of role focus:
 1. Look for a matching window in the role’s workspace → focus it.

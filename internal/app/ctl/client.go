@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"time"
 
-	"hypr-orbits/internal/ipc"
-	"hypr-orbits/internal/module"
-	"hypr-orbits/internal/orbit"
+	"hyprorbits/internal/ipc"
+	"hyprorbits/internal/module"
+	"hyprorbits/internal/orbit"
 )
 
 // Options configures the behaviour of the control client.
@@ -20,7 +20,7 @@ type Options struct {
 	NoColor    bool
 }
 
-// Client speaks the IPC protocol with the hypr-orbits daemon.
+// Client speaks the IPC protocol with the hyprorbits daemon.
 type Client struct {
 	opts Options
 }

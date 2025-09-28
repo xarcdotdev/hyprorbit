@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"strings"
 
-	"hypr-orbits/internal/hyprctl"
-	"hypr-orbits/internal/ipc"
-	"hypr-orbits/internal/module"
-	"hypr-orbits/internal/orbit"
-	"hypr-orbits/internal/runtime"
+	"hyprorbits/internal/hyprctl"
+	"hyprorbits/internal/ipc"
+	"hyprorbits/internal/module"
+	"hyprorbits/internal/orbit"
+	"hyprorbits/internal/runtime"
 )
 
 // Dispatcher routes IPC requests to domain handlers.

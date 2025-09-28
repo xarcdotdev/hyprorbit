@@ -2,24 +2,24 @@
 
 <!-- PROJECT LOGO -->
 <div align="center">
-  <a href="https://github.com/xarcdevdot/hypr-orbits">
+  <a href="https://github.com/xarcdevdot/hyprorbits">
     <!-- <img src="docs/images/logo.png" alt="Logo" width="200" height="200"> -->
     <div style="font-size: 5em; font-weight:bold">Ø</div>
   </a>
 
-<h3 align="center">hypr-orbits [WIP]</h3>
+<h3 align="center">hyprorbits [WIP]</h3>
 
   <p align="center">
 Lightning-fast workspace orchestration for Hyprland - orbit-focused task switching with sub-5ms responsiveness.
     <br>
 
-**hypr-orbits** is a stateful daemon + lightweight client system for Hyprland workspace management, written in Go. It provides context-based switching between sets of workspaces (orbits) with stable module hotkeys, focus-or-launch semantics, and intelligent window management.
+**hyprorbits** is a stateful daemon + lightweight client system for Hyprland workspace management, written in Go. It provides context-based switching between sets of workspaces (orbits) with stable module hotkeys, focus-or-launch semantics, and intelligent window management.
 
 <br>
 
-<a href="https://github.com/yourusername/hypr-orbits/issues/new?labels=bug&template=bug-report---.md">Report Bug</a>
+<a href="https://github.com/yourusername/hyprorbits/issues/new?labels=bug&template=bug-report---.md">Report Bug</a>
 &middot;
-<a href="https://github.com/yourusername/hypr-orbits/issues/new?labels=enhancement&template=feature-request---.md">Request Feature</a>
+<a href="https://github.com/yourusername/hyprorbits/issues/new?labels=enhancement&template=feature-request---.md">Request Feature</a>
   </p>
 
 [![Contributors][contributors-shield]][contributors-url]
@@ -31,9 +31,9 @@ Lightning-fast workspace orchestration for Hyprland - orbit-focused task switchi
 </div>
 
 <!-- ABOUT THE PROJECT -->
-## What is hypr-orbits?
+## What is hyprorbits?
 
-Use `hypr-orbits module focus code` to instantly switch to your code workspace. hypr-orbits manages independent "orbit" contexts while keeping your hotkeys stable across all workspace sets.
+Use `hyprorbits module focus code` to instantly switch to your code workspace. hyprorbits manages independent "orbit" contexts while keeping your hotkeys stable across all workspace sets.
 
 <!-- <div align="center">
 ![Product Demo][product-screenshot]
@@ -48,14 +48,14 @@ Use `hypr-orbits module focus code` to instantly switch to your code workspace. 
 📋 **Window Matching**: Regex-based window matching by class, title, or initial properties<br>
 ⚡ **Intelligent Caching**: Hyprland client list caching with smart invalidation
 
-### Why hypr-orbits?
+### Why hyprorbits?
 
 - **Need instant workspace switching?** Sub-5ms response times via persistent daemon.
 - **Managing multiple project contexts?** Orbit-based separation with consistent hotkeys.
 - **Want smart window management?** Focus-or-launch prevents duplicate windows.
 - **Tired of workspace chaos?** Structured module-based organization.
 
-**⚡ hypr-orbits** eliminates the friction of context switching in Hyprland, making workspace management feel instant and intuitive.
+**⚡ hyprorbits** eliminates the friction of context switching in Hyprland, making workspace management feel instant and intuitive.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -70,26 +70,26 @@ Use `hypr-orbits module focus code` to instantly switch to your code workspace. 
 
 #### From source
 ```sh
-go install github.com/yourusername/hypr-orbits/cmd/hypr-orbitsd@latest
-go install github.com/yourusername/hypr-orbits/cmd/hypr-orbits@latest
+go install github.com/yourusername/hyprorbits/cmd/hyprorbitsd@latest
+go install github.com/yourusername/hyprorbits/cmd/hyprorbits@latest
 ```
 
 #### Clone and build
 ```sh
-git clone https://github.com/yourusername/hypr-orbits.git
-cd hypr-orbits
-go build ./cmd/hypr-orbitsd
-go build ./cmd/hypr-orbits
+git clone https://github.com/yourusername/hyprorbits.git
+cd hyprorbits
+go build ./cmd/hyprorbitsd
+go build ./cmd/hyprorbits
 ```
 
 ### 3. Start Daemon
 
 ```sh
 # Start the daemon
-./hypr-orbitsd
+./hyprorbitsd
 
 # Or with custom config
-./hypr-orbitsd --config ~/.config/hypr-orbits/config.yaml
+./hyprorbitsd --config ~/.config/hyprorbits/config.yaml
 ```
 
 ### 4. Configure Hyprland Keybinds
@@ -98,32 +98,32 @@ Add to your `~/.config/hypr/hyprland.conf`:
 
 ```bash
 # Module hotkeys (stable across orbits)
-bind = SUPER, 1, exec, hypr-orbits module focus code
-bind = SUPER, 2, exec, hypr-orbits module focus comm
-bind = SUPER, 3, exec, hypr-orbits module focus gfx
+bind = SUPER, 1, exec, hyprorbits module focus code
+bind = SUPER, 2, exec, hyprorbits module focus comm
+bind = SUPER, 3, exec, hyprorbits module focus gfx
 
 # Orbit switching
-bind = SUPER, comma, exec, hypr-orbits orbit prev
-bind = SUPER, period, exec, hypr-orbits orbit next
+bind = SUPER, comma, exec, hyprorbits orbit prev
+bind = SUPER, period, exec, hyprorbits orbit next
 
 # Quick workspace jumping
-bind = SUPER SHIFT, 1, exec, hypr-orbits module jump code
+bind = SUPER SHIFT, 1, exec, hyprorbits module jump code
 ```
 
 ### 5. Basic Usage
 
 ```sh
 # Check current orbit
-hypr-orbits orbit get
+hyprorbits orbit get
 
 # Switch to beta orbit
-hypr-orbits orbit set beta
+hyprorbits orbit set beta
 
 # Focus or launch code module
-hypr-orbits module focus code --match "class=.*Code"
+hyprorbits module focus code --match "class=.*Code"
 ```
 
-See `hypr-orbits --help` for full options.
+See `hyprorbits --help` for full options.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -145,28 +145,28 @@ See `hypr-orbits --help` for full options.
 
 | Command            | Description                                     |
 | ------------------ | ----------------------------------------------- |
-| `hypr-orbits orbit get`    | Show current active orbit                      |
-| `hypr-orbits orbit set <name>` | Switch to specific orbit                   |
-| `hypr-orbits orbit next/prev` | Cycle through configured orbits             |
-| `hypr-orbits module focus <name>` | Smart focus-or-launch for module        |
-| `hypr-orbits module jump <name>` | Simple workspace switching               |
+| `hyprorbits orbit get`    | Show current active orbit                      |
+| `hyprorbits orbit set <name>` | Switch to specific orbit                   |
+| `hyprorbits orbit next/prev` | Cycle through configured orbits             |
+| `hyprorbits module focus <name>` | Smart focus-or-launch for module        |
+| `hyprorbits module jump <name>` | Simple workspace switching               |
 
 ### Orbit Commands
 
 **Get current orbit:**
 ```sh
-hypr-orbits orbit get
+hyprorbits orbit get
 # Output: alpha	α	#BC83F9
 ```
 
 **Switch orbits:**
 ```sh
 # Specific orbit
-hypr-orbits orbit set beta
+hyprorbits orbit set beta
 
 # Cycle through orbits
-hypr-orbits orbit next
-hypr-orbits orbit prev
+hyprorbits orbit next
+hyprorbits orbit prev
 ```
 
 ### Module Commands
@@ -174,53 +174,53 @@ hypr-orbits orbit prev
 **Focus or launch:**
 ```sh
 # Focus existing window, move if needed, or spawn new
-hypr-orbits module focus code
+hyprorbits module focus code
 
 # With custom matcher
-hypr-orbits module focus code --match "class=.*VSCode"
+hyprorbits module focus code --match "class=.*VSCode"
 
 # With spawn command override
-hypr-orbits module focus code --cmd "code"
+hyprorbits module focus code --cmd "code"
 
 # Prevent window moving
-hypr-orbits module focus code --no-move
+hyprorbits module focus code --no-move
 ```
 
 **Jump to workspace:**
 ```sh
 # Simple workspace switch (no window management)
-hypr-orbits module jump code
+hyprorbits module jump code
 ```
 
 **Module seed - [WIP]:**
 ```sh
 # Populate empty workspace with configured apps
-hypr-orbits module seed code
+hyprorbits module seed code
 ```
 
 ### Output Formats
 
 **Human-readable (default):**
 ```sh
-$ hypr-orbits orbit get
+$ hyprorbits orbit get
 alpha	α	#BC83F9
 
-$ hypr-orbits module focus code
+$ hyprorbits module focus code
 focused	code-alpha	alpha
 ```
 
 **JSON mode:**
 ```sh
-$ hypr-orbits orbit get --json
+$ hyprorbits orbit get --json
 {"name":"alpha","label":"α","color":"#BC83F9"}
 
-$ hypr-orbits module focus code --json
+$ hyprorbits module focus code --json
 {"action":"focused","workspace":"code-alpha","orbit":"alpha"}
 ```
 
 **Quiet mode:**
 ```sh
-$ hypr-orbits orbit get --quiet
+$ hyprorbits orbit get --quiet
 # Minimal output, errors to stderr
 ```
 
@@ -229,7 +229,7 @@ $ hypr-orbits orbit get --quiet
 ## Configuration
 
 ### File Location
-- **Default**: `~/.config/hypr-orbits/config.yaml`
+- **Default**: `~/.config/hyprorbits/config.yaml`
 - **Override**: `--config <path>` flag
 - **Environment**: `HYPR_ORBITS_SOCKET` for custom socket path
 
@@ -278,31 +278,31 @@ defaults:
 
 ```sh
 # Match by class
-hypr-orbits module focus code --match "class=.*Code"
+hyprorbits module focus code --match "class=.*Code"
 
 # Match by title
-hypr-orbits module focus browser --match "title=.*Firefox"
+hyprorbits module focus browser --match "title=.*Firefox"
 ```
 
 ### Daemon Configuration
 
 **Socket location:**
-- Primary: `$XDG_RUNTIME_DIR/hypr-orbits.sock`
-- Fallback: `/tmp/hypr-orbits-$UID.sock`
+- Primary: `$XDG_RUNTIME_DIR/hyprorbits.sock`
+- Fallback: `/tmp/hyprorbits-$UID.sock`
 
 **Logging:**
 ```sh
 # Start with debug logging
-hypr-orbitsd --log-level debug
+hyprorbitsd --log-level debug
 
 # JSON format logging
-hypr-orbitsd --log-format json
+hyprorbitsd --log-format json
 ```
 
 **Manual config reload:**
 ```sh
 # Send HUP signal to reload config
-kill -HUP $(pgrep hypr-orbitsd)
+kill -HUP $(pgrep hyprorbitsd)
 ```
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
@@ -314,8 +314,8 @@ kill -HUP $(pgrep hypr-orbitsd)
 **Waybar example:**
 ```json
 {
-  "custom/hypr-orbits": {
-    "exec": "hypr-orbits orbit get",
+  "custom/hyprorbits": {
+    "exec": "hyprorbits orbit get",
     "interval": 1,
     "format": "🌌 {}"
   }
@@ -331,7 +331,7 @@ After=graphical-session.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/hypr-orbitsd
+ExecStart=/usr/bin/hyprorbitsd
 Restart=on-failure
 
 [Install]
@@ -347,19 +347,19 @@ WantedBy=default.target
 **Daemon not starting:**
 ```sh
 # Check if already running
-pgrep hypr-orbitsd
+pgrep hyprorbitsd
 
 # Check logs
-hypr-orbitsd --log-level debug
+hyprorbitsd --log-level debug
 ```
 
 **Socket connection failed:**
 ```sh
 # Check socket permissions
-ls -la $XDG_RUNTIME_DIR/hypr-orbits.sock
+ls -la $XDG_RUNTIME_DIR/hyprorbits.sock
 
 # Use custom socket path
-hypr-orbits --socket /tmp/my-orbits.sock orbit get
+hyprorbits --socket /tmp/my-orbits.sock orbit get
 ```
 
 **Window matching not working:**
@@ -368,7 +368,7 @@ hypr-orbits --socket /tmp/my-orbits.sock orbit get
 hyprctl clients -j | grep -A 10 -B 10 "YourApp"
 
 # Test matchers
-hypr-orbits module focus code --match "class=.*" --no-move
+hyprorbits module focus code --match "class=.*" --no-move
 ```
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
@@ -401,8 +401,8 @@ Issues and PRs welcome! Please check existing issues before creating new ones.
 ### Development
 ```sh
 # Clone repository
-git clone https://github.com/yourusername/hypr-orbits.git
-cd hypr-orbits
+git clone https://github.com/yourusername/hyprorbits.git
+cd hyprorbits
 
 # Build both binaries
 make build
@@ -425,21 +425,21 @@ See `LICENSE` for details.
 
 ## Contact - [WIP]
 
-Project Link: [https://github.com/yourusername/hypr-orbits](https://github.com/hypr-orbits/hypr-orbits)
+Project Link: [https://github.com/yourusername/hyprorbits](https://github.com/hyprorbits/hyprorbits)
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 <!-- MARKDOWN LINKS & IMAGES -->
-[contributors-shield]: https://img.shields.io/github/contributors/yourusername/hypr-orbits.svg?style=for-the-badge
-[contributors-url]: https://github.com/yourusername/hypr-orbits/graphs/contributors
-[forks-shield]: https://img.shields.io/github/forks/yourusername/hypr-orbits.svg?style=for-the-badge
-[forks-url]: https://github.com/yourusername/hypr-orbits/network/members
-[stars-shield]: https://img.shields.io/github/stars/yourusername/hypr-orbits.svg?style=for-the-badge
-[stars-url]: https://github.com/yourusername/hypr-orbits/stargazers
-[issues-shield]: https://img.shields.io/github/issues/yourusername/hypr-orbits.svg?style=for-the-badge
-[issues-url]: https://github.com/yourusername/hypr-orbits/issues
-[license-shield]: https://img.shields.io/github/license/yourusername/hypr-orbits.svg?style=for-the-badge
-[license-url]: https://github.com/yourusername/hypr-orbits/blob/master/LICENSE
+[contributors-shield]: https://img.shields.io/github/contributors/yourusername/hyprorbits.svg?style=for-the-badge
+[contributors-url]: https://github.com/yourusername/hyprorbits/graphs/contributors
+[forks-shield]: https://img.shields.io/github/forks/yourusername/hyprorbits.svg?style=for-the-badge
+[forks-url]: https://github.com/yourusername/hyprorbits/network/members
+[stars-shield]: https://img.shields.io/github/stars/yourusername/hyprorbits.svg?style=for-the-badge
+[stars-url]: https://github.com/yourusername/hyprorbits/stargazers
+[issues-shield]: https://img.shields.io/github/issues/yourusername/hyprorbits.svg?style=for-the-badge
+[issues-url]: https://github.com/yourusername/hyprorbits/issues
+[license-shield]: https://img.shields.io/github/license/yourusername/hyprorbits.svg?style=for-the-badge
+[license-url]: https://github.com/yourusername/hyprorbits/blob/master/LICENSE
 [product-screenshot]: docs/images/demo.gif
 
 [Go.dev]: https://go.dev/

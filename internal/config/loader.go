@@ -91,7 +91,7 @@ func (l *Loader) resolvePath() (string, error) {
 		base = filepath.Join(home, ".config")
 	}
 
-	candidate := filepath.Join(base, "hypr-orbits", "config.yaml")
+	candidate := filepath.Join(base, "hyprorbits", "config.yaml")
 	if _, err := os.Stat(candidate); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			// Intentionally return empty path to indicate defaults.

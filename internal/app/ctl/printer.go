@@ -7,8 +7,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"hypr-orbits/internal/module"
-	"hypr-orbits/internal/orbit"
+	"hyprorbits/internal/module"
+	"hyprorbits/internal/orbit"
 )
 
 // PrintOrbit emits orbit information to the configured writer.

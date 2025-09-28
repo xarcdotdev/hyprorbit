@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"hypr-orbits/internal/config"
-	"hypr-orbits/internal/runtime"
+	"hyprorbits/internal/config"
+	"hyprorbits/internal/runtime"
 )
 
 // Dependencies bundles the collaborators required by the orbit service.

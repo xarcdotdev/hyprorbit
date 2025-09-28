@@ -10,7 +10,7 @@ import (
 	"strings"
 	"sync"
 
-	"hypr-orbits/internal/config"
+	"hyprorbits/internal/config"
 )
 
 // Options configures the orbit state manager.
@@ -196,5 +196,5 @@ func resolvePath(override string) (string, error) {
 		base = filepath.Join(home, ".local", "state")
 	}
 
-	return filepath.Join(base, "hypr-orbits", "orbit"), nil
+	return filepath.Join(base, "hyprorbits", "orbit"), nil
 }

@@ -11,10 +11,10 @@ import (
 	"sync"
 	"time"
 
-	"hypr-orbits/internal/ipc"
+	"hyprorbits/internal/ipc"
 )
 
-// Server hosts the hypr-orbits daemon lifecycle.
+// Server hosts the hyprorbits daemon lifecycle.
 type Server struct {
 	opts       Options
 	state      *DaemonState

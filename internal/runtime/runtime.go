@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"os"
 
-	"hypr-orbits/internal/config"
-	"hypr-orbits/internal/hyprctl"
-	"hypr-orbits/internal/state"
+	"hyprorbits/internal/config"
+	"hyprorbits/internal/hyprctl"
+	"hyprorbits/internal/state"
 )
 
 // Options carries process-wide configuration for a single CLI invocation.

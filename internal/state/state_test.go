@@ -6,7 +6,7 @@ import (
 	"sync"
 	"testing"
 
-	"hypr-orbits/internal/config"
+	"hyprorbits/internal/config"
 )
 
 func TestManagerConcurrentAccess(t *testing.T) {

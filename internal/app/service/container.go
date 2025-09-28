@@ -4,15 +4,15 @@ import (
 	"context"
 	"sync"
 
-	"hypr-orbits/internal/config"
-	"hypr-orbits/internal/hyprctl"
-	"hypr-orbits/internal/module"
-	"hypr-orbits/internal/orbit"
-	"hypr-orbits/internal/runtime"
-	"hypr-orbits/internal/state"
+	"hyprorbits/internal/config"
+	"hyprorbits/internal/hyprctl"
+	"hyprorbits/internal/module"
+	"hyprorbits/internal/orbit"
+	"hyprorbits/internal/runtime"
+	"hyprorbits/internal/state"
 )
 
-// DaemonState aggregates long-lived daemon dependencies for hypr-orbitsd.
+// DaemonState aggregates long-lived daemon dependencies for hyprorbitsd.
 type DaemonState struct {
 	opts       Options
 	loaderOpts config.LoaderOptions

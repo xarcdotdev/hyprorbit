@@ -16,7 +16,7 @@ const (
 
 	socketEnvVar      = "HYPR_ORBITS_SOCKET"
 	xdgRuntimeEnvVar  = "XDG_RUNTIME_DIR"
-	defaultSocketName = "hypr-orbits.sock"
+	defaultSocketName = "hyprorbits.sock"
 )
 
 // DialOptions instructs DialContext how to create the IPC connection.
@@ -80,5 +80,5 @@ func absolutize(path string) (string, error) {
 }
 
 func fallbackSocketPath() string {
-	return filepath.Join("/tmp", fmt.Sprintf("hypr-orbits-%d.sock", os.Getuid()))
+	return filepath.Join("/tmp", fmt.Sprintf("hyprorbits-%d.sock", os.Getuid()))
 }
