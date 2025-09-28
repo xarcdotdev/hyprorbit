@@ -159,7 +159,18 @@ func (c *Client) FocusWindow(ctx context.Context, address string) error {
 
 // MoveToWorkspace moves a window to the target workspace via dispatch.
 func (c *Client) MoveToWorkspace(ctx context.Context, windowAddr, workspace string) error {
-	return c.Dispatch(ctx, "movetoworkspace", "name:"+workspace, "address:"+windowAddr)
+	workspace = strings.TrimSpace(workspace)
+	if workspace == "" {
+		return fmt.Errorf("movetoworkspace: workspace name missing")
+	}
+
+	if addr := strings.TrimSpace(windowAddr); addr != "" {
+		if err := c.FocusWindow(ctx, addr); err != nil {
+			return fmt.Errorf("movetoworkspace: focus %s: %w", addr, err)
+		}
+	}
+
+	return c.Dispatch(ctx, "movetoworkspacesilent", "name:"+workspace)
 }
 
 // SwitchWorkspace switches focus to the named workspace.

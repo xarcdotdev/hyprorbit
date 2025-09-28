@@ -462,7 +462,10 @@ func (d *Dispatcher) alignWorkspace(ctx context.Context) error {
 			return moveErr
 		}
 	}
-	return hypr.SwitchWorkspace(ctx, workspace)
+	if _, err := modSvc.Jump(ctx, names[0]); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (d *Dispatcher) ensureWorkspaceExists(ctx context.Context, hypr runtime.HyprctlClient, target, origin string) error {
