@@ -49,6 +49,15 @@ type HyprctlClient interface {
 	Clients(ctx context.Context) ([]byte, error)
 	DecodeClients(ctx context.Context, out any) error
 	InvalidateClients()
+	Workspaces(ctx context.Context) ([]hyprctl.Workspace, error)
+	ActiveWorkspace(ctx context.Context) (*hyprctl.Workspace, error)
+	ActiveWindow(ctx context.Context) (*hyprctl.Window, error)
+	Monitors(ctx context.Context) ([]hyprctl.Monitor, error)
+	Batch(ctx context.Context, commands ...[]string) ([]hyprctl.BatchResult, error)
+	BatchDispatch(ctx context.Context, dispatches ...[]string) ([]hyprctl.BatchResult, error)
+	SwitchWorkspace(ctx context.Context, workspace string) error
+	FocusWindow(ctx context.Context, address string) error
+	MoveToWorkspace(ctx context.Context, windowAddr, workspace string) error
 }
 
 // Bootstrap assembles the runtime dependencies for a CLI invocation.

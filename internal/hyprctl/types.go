@@ -105,16 +105,7 @@ func (c ClientInfo) FieldValue(field string) string {
 
 // DecodeClientsPayload normalises client JSON payload decoding.
 func DecodeClientsPayload(data []byte, out any) error {
-	if out == nil {
-		return fmt.Errorf("hyprctl: decode clients: target is nil")
-	}
-	if len(data) == 0 {
-		return nil
-	}
-	if err := json.Unmarshal(data, out); err != nil {
-		return fmt.Errorf("hyprctl: decode clients: %w", err)
-	}
-	return nil
+	return decodePayload(data, out, "clients")
 }
 
 // ParseClients converts a raw clients payload into typed client entries.
@@ -127,4 +118,17 @@ func ParseClients(data []byte) ([]ClientInfo, error) {
 		return []ClientInfo{}, nil
 	}
 	return clients, nil
+}
+
+func decodePayload(data []byte, out any, resource string) error {
+	if out == nil {
+		return fmt.Errorf("hyprctl: decode %s: target is nil", resource)
+	}
+	if len(data) == 0 {
+		return nil
+	}
+	if err := json.Unmarshal(data, out); err != nil {
+		return fmt.Errorf("hyprctl: decode %s: %w", resource, err)
+	}
+	return nil
 }

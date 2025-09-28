@@ -156,13 +156,12 @@ func (s *Service) Focus(ctx context.Context, moduleName string, opts FocusOption
 
 	if len(workspaceClients) > 0 {
 		client := workspaceClients[0]
-		if err := s.hyprctl.Dispatch(ctx, "workspace", "name:"+workspace); err != nil {
-			return nil, err
-		}
+		cmds := [][]string{{"workspace", "name:" + workspace}}
 		if shouldFloat && !client.Floating {
-			_ = s.hyprctl.Dispatch(ctx, "togglefloating", "address:"+client.Address)
+			cmds = append(cmds, []string{"togglefloating", "address:" + client.Address})
 		}
-		if err := s.hyprctl.Dispatch(ctx, "focuswindow", "address:"+client.Address); err != nil {
+		cmds = append(cmds, []string{"focuswindow", "address:" + client.Address})
+		if err := dispatchSequence(ctx, s.hyprctl, cmds...); err != nil {
 			return nil, err
 		}
 		return &Result{Action: "focused", Workspace: workspace}, nil
@@ -170,16 +169,15 @@ func (s *Service) Focus(ctx context.Context, moduleName string, opts FocusOption
 
 	if allowMove && len(orbitClients) > 0 {
 		client := orbitClients[0]
-		if err := s.hyprctl.Dispatch(ctx, "movetoworkspace", "name:"+workspace, "address:"+client.Address); err != nil {
-			return nil, err
-		}
-		if err := s.hyprctl.Dispatch(ctx, "workspace", "name:"+workspace); err != nil {
-			return nil, err
+		cmds := [][]string{
+			{"movetoworkspace", "name:" + workspace, "address:" + client.Address},
+			{"workspace", "name:" + workspace},
 		}
 		if shouldFloat && !client.Floating {
-			_ = s.hyprctl.Dispatch(ctx, "togglefloating", "address:"+client.Address)
+			cmds = append(cmds, []string{"togglefloating", "address:" + client.Address})
 		}
-		if err := s.hyprctl.Dispatch(ctx, "focuswindow", "address:"+client.Address); err != nil {
+		cmds = append(cmds, []string{"focuswindow", "address:" + client.Address})
+		if err := dispatchSequence(ctx, s.hyprctl, cmds...); err != nil {
 			return nil, err
 		}
 		return &Result{Action: "moved", Workspace: workspace}, nil
@@ -189,7 +187,7 @@ func (s *Service) Focus(ctx context.Context, moduleName string, opts FocusOption
 		return nil, fmt.Errorf("module %s: no matching clients and no command to spawn", moduleName)
 	}
 
-	if err := s.hyprctl.Dispatch(ctx, "workspace", "name:"+workspace); err != nil {
+	if err := s.hyprctl.SwitchWorkspace(ctx, workspace); err != nil {
 		return nil, err
 	}
 	if err := spawnProcess(ctx, spawnCmd); err != nil {
@@ -204,7 +202,7 @@ func (s *Service) Jump(ctx context.Context, moduleName string) (*Result, error) 
 	if err != nil {
 		return nil, err
 	}
-	if err := s.hyprctl.Dispatch(ctx, "workspace", "name:"+workspace); err != nil {
+	if err := s.hyprctl.SwitchWorkspace(ctx, workspace); err != nil {
 		return nil, err
 	}
 	return &Result{Action: "jumped", Workspace: workspace, Orbit: orbitRecord.Name}, nil
@@ -284,6 +282,21 @@ func spawnProcess(ctx context.Context, command []string) error {
 		_ = cmd.Process.Release()
 	}
 	return nil
+}
+
+func dispatchSequence(ctx context.Context, client runtime.HyprctlClient, commands ...[]string) error {
+	filtered := make([][]string, 0, len(commands))
+	for _, cmd := range commands {
+		if len(cmd) == 0 {
+			continue
+		}
+		filtered = append(filtered, cmd)
+	}
+	if len(filtered) == 0 {
+		return nil
+	}
+	_, err := client.BatchDispatch(ctx, filtered...)
+	return err
 }
 
 func bucketClients(clients []hyprctl.ClientInfo, matcher config.Matcher, compiled *regexp.Regexp, workspace string, orbitName string) ([]hyprctl.ClientInfo, []hyprctl.ClientInfo) {
