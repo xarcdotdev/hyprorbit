@@ -17,7 +17,7 @@ import (
 // Server hosts the hypr-orbits daemon lifecycle.
 type Server struct {
 	opts       Options
-	state      *State
+	state      *DaemonState
 	dispatcher *Dispatcher
 
 	mu       sync.Mutex
@@ -32,15 +32,15 @@ func NewServer(ctx context.Context, opts Options) (*Server, error) {
 		return nil, err
 	}
 
-	state, err := NewState(ctx, opts)
+	daemonState, err := NewDaemonState(ctx, opts)
 	if err != nil {
 		return nil, err
 	}
 
 	return &Server{
 		opts:       opts,
-		state:      state,
-		dispatcher: NewDispatcher(state),
+		state:      daemonState,
+		dispatcher: NewDispatcher(daemonState),
 	}, nil
 }
 
@@ -170,6 +170,6 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
 }
 
 // State exposes the daemon state (primarily for testing hooks).
-func (s *Server) State() *State {
+func (s *Server) State() *DaemonState {
 	return s.state
 }

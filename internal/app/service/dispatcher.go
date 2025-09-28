@@ -9,11 +9,11 @@ import (
 
 // Dispatcher routes IPC requests to domain handlers.
 type Dispatcher struct {
-	state *State
+	state *DaemonState
 }
 
 // NewDispatcher constructs a dispatcher bound to the daemon state.
-func NewDispatcher(state *State) *Dispatcher {
+func NewDispatcher(state *DaemonState) *Dispatcher {
 	return &Dispatcher{state: state}
 }
 

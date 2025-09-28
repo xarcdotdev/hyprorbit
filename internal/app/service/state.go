@@ -12,24 +12,24 @@ import (
 	"hypr-orbits/internal/module"
 	"hypr-orbits/internal/orbit"
 	"hypr-orbits/internal/runtime"
-	orbitstate "hypr-orbits/internal/state"
+	"hypr-orbits/internal/state"
 )
 
-// State aggregates long-lived daemon dependencies.
-type State struct {
+// DaemonState aggregates long-lived daemon dependencies for hypr-orbitsd.
+type DaemonState struct {
 	opts   Options
 	loader *config.Loader
 
 	mu        sync.RWMutex
 	config    *config.EffectiveConfig
-	orbitMgr  *orbitstate.Manager
+	orbitMgr  *state.Manager
 	orbitSvc  *orbit.Service
 	moduleSvc *module.Service
 	hyprctl   *cachedHyprctl
 }
 
-// NewState loads configuration and assembles domain services for the daemon.
-func NewState(ctx context.Context, opts Options) (*State, error) {
+// NewDaemonState loads configuration and assembles domain services for the daemon.
+func NewDaemonState(ctx context.Context, opts Options) (*DaemonState, error) {
 	loader := config.NewLoader(config.LoaderOptions{OverridePath: opts.ConfigPath})
 
 	cfg, err := loader.Load(ctx)
@@ -37,7 +37,7 @@ func NewState(ctx context.Context, opts Options) (*State, error) {
 		return nil, err
 	}
 
-	orbitMgr, err := orbitstate.NewManager(orbitstate.Options{Orbits: cfg.Orbits})
+	orbitMgr, err := state.NewManager(state.Options{Orbits: cfg.Orbits})
 	if err != nil {
 		return nil, err
 	}
@@ -61,7 +61,7 @@ func NewState(ctx context.Context, opts Options) (*State, error) {
 		return nil, err
 	}
 
-	return &State{
+	return &DaemonState{
 		opts:      opts,
 		loader:    loader,
 		config:    cfg,
@@ -73,28 +73,28 @@ func NewState(ctx context.Context, opts Options) (*State, error) {
 }
 
 // Config returns the effective configuration snapshot.
-func (s *State) Config() *config.EffectiveConfig {
+func (s *DaemonState) Config() *config.EffectiveConfig {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.config
 }
 
 // OrbitService exposes the cached orbit service.
-func (s *State) OrbitService() *orbit.Service {
+func (s *DaemonState) OrbitService() *orbit.Service {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.orbitSvc
 }
 
 // ModuleService exposes the cached module service.
-func (s *State) ModuleService() *module.Service {
+func (s *DaemonState) ModuleService() *module.Service {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.moduleSvc
 }
 
 // InvalidateClients clears the cached hyprctl client listing.
-func (s *State) InvalidateClients() {
+func (s *DaemonState) InvalidateClients() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.moduleSvc.ResetClientCache()
