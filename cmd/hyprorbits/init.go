@@ -47,7 +47,8 @@ func newInitCommand() *cobra.Command {
 				return err
 			}
 
-			fmt.Fprintf(out, "%sTip:%s Explore Waybar + keybinding examples at %shttps://github.com/xarcdotdev/hyprorbits/examples%s\n\n", color(ansiAccent), color(ansiReset), color(ansiAccent), color(ansiReset))
+			fmt.Fprintf(out, "%sTip:%s Explore Waybar + keybinding examples at: \n", color(ansiAccent), color(ansiReset))
+			fmt.Fprintf(out, "%shttps://github.com/xarcdotdev/hyprorbits/examples%s\n\n", color(ansiAccent), color(ansiReset))
 
 			ok, err := promptYesNo(out, "Reset Hyprland workspaces to match your first orbit/module?", false)
 			if err != nil {
@@ -81,9 +82,9 @@ func promptConfigGeneration(ctx context.Context, out interface{ Write([]byte) (i
 	exists := fileExists(defaultPath)
 	var question string
 	if exists {
-		question = fmt.Sprintf("Regenerate default config at %s?", defaultPath)
+		question = fmt.Sprintf("Regenerate default config at %s", defaultPath)
 	} else {
-		question = fmt.Sprintf("Create default config at %s?", defaultPath)
+		question = fmt.Sprintf("Create default config at %s", defaultPath)
 	}
 	create, err := promptYesNo(out, question, !exists)
 	if err != nil {
@@ -149,7 +150,15 @@ func isConnectionError(err error) bool {
 }
 
 func promptYesNo(out interface{ Write([]byte) (int, error) }, question string, defYes bool) (bool, error) {
-	prompt := fmt.Sprintf("%s? [%sy%s/%sn%s]: ", question, color(ansiPrompt), color(ansiReset), color(ansiPrompt), color(ansiReset))
+	var yesOption, noOption string
+	if defYes {
+		yesOption = "Y"
+		noOption = "n"
+	} else {
+		yesOption = "y"
+		noOption = "N"
+	}
+	prompt := fmt.Sprintf("%s? [%s%s%s/%s%s%s]: ", question, color(ansiPrompt), yesOption, color(ansiReset), color(ansiPrompt), noOption, color(ansiReset))
 	if _, err := fmt.Fprint(out, prompt); err != nil {
 		return false, err
 	}
