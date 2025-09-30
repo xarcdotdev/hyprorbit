@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"hyprorbits/internal/hyprctl/events"
+	"hyprorbit/internal/hyprctl/events"
 )
 
 func TestStatusBroadcasterPublish(t *testing.T) {

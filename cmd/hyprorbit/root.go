@@ -7,8 +7,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"hyprorbits/internal/app/ctl"
-	"hyprorbits/internal/runtime"
+	"hyprorbit/internal/app/ctl"
+	"hyprorbit/internal/runtime"
 )
 
 var colorEnabled = true
@@ -24,7 +24,7 @@ func execute() int {
 
 func newRootCommand() *cobra.Command {
 	root := &cobra.Command{
-		Use:           "hyprorbits",
+		Use:           "hyprorbit",
 		Short:         "Orbit-focused workspace orchestration for Hyprland",
 		SilenceUsage:  true,
 		SilenceErrors: false,

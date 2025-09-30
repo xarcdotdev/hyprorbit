@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"hyprorbits/internal/ipc"
+	"hyprorbit/internal/ipc"
 )
 
 // Server hosts the hyprorbits daemon lifecycle.

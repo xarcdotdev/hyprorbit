@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	"hyprorbits/internal/config"
+	"hyprorbit/internal/config"
 )
 
 // ParseMatcher converts a CLI-style matcher override into the structured form.

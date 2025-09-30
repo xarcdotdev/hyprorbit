@@ -7,13 +7,13 @@ import (
 	"sync"
 	"time"
 
-	"hyprorbits/internal/config"
-	"hyprorbits/internal/hyprctl"
-	"hyprorbits/internal/hyprctl/events"
-	"hyprorbits/internal/module"
-	"hyprorbits/internal/orbit"
-	"hyprorbits/internal/runtime"
-	"hyprorbits/internal/state"
+	"hyprorbit/internal/config"
+	"hyprorbit/internal/hyprctl"
+	"hyprorbit/internal/hyprctl/events"
+	"hyprorbit/internal/module"
+	"hyprorbit/internal/orbit"
+	"hyprorbit/internal/runtime"
+	"hyprorbit/internal/state"
 )
 
 const snapshotQueryTimeout = 1200 * time.Millisecond

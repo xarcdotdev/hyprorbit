@@ -6,7 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"hyprorbits/internal/app/ctl"
+	"hyprorbit/internal/app/ctl"
 )
 
 func newDaemonCommand() *cobra.Command {

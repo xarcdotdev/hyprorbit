@@ -2,8 +2,8 @@ package module
 
 import (
 	"fmt"
-	"hyprorbits/internal/config"
-	"hyprorbits/internal/orbit"
+	"hyprorbit/internal/config"
+	"hyprorbit/internal/orbit"
 	"strings"
 )
 

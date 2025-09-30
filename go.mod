@@ -1,4 +1,4 @@
-module hyprorbits
+module hyprorbit
 
 go 1.25.1
 

@@ -9,7 +9,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	"hyprorbits/internal/app/service"
+	"hyprorbit/internal/app/service"
 )
 
 func execute() int {
@@ -32,7 +32,7 @@ func newRootCommand() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:           "hyprorbitsd",
+		Use:           "hyprorbitd",
 		Short:         "Stateful orbit/module daemon for Hyprland",
 		SilenceUsage:  true,
 		SilenceErrors: false,

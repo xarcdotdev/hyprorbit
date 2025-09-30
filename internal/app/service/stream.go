@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"hyprorbits/internal/orbit"
+	"hyprorbit/internal/orbit"
 )
 
 const defaultSnapshotBuffer = 16

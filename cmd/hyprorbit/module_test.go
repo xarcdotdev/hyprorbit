@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"testing"
 
-	"hyprorbits/internal/app/service"
-	"hyprorbits/internal/config"
-	"hyprorbits/internal/orbit"
+	"hyprorbit/internal/app/service"
+	"hyprorbit/internal/config"
+	"hyprorbit/internal/orbit"
 )
 
 func TestModuleWatchFormatterGeneralDefaults(t *testing.T) {

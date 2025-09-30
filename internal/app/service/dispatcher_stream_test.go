@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"hyprorbits/internal/ipc"
-	"hyprorbits/internal/module"
-	"hyprorbits/internal/orbit"
+	"hyprorbit/internal/ipc"
+	"hyprorbit/internal/module"
+	"hyprorbit/internal/orbit"
 )
 
 func TestDispatcherModuleStatusStream(t *testing.T) {

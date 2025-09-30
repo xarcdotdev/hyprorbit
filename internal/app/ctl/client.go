@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"hyprorbits/internal/ipc"
-	"hyprorbits/internal/module"
-	"hyprorbits/internal/orbit"
+	"hyprorbit/internal/ipc"
+	"hyprorbit/internal/module"
+	"hyprorbit/internal/orbit"
 )
 
 // Options configures the behaviour of the control client.

@@ -7,10 +7,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"hyprorbits/internal/app/ctl"
-	"hyprorbits/internal/app/service"
-	"hyprorbits/internal/module"
-	"hyprorbits/internal/runtime"
+	"hyprorbit/internal/app/ctl"
+	"hyprorbit/internal/app/service"
+	"hyprorbit/internal/module"
+	"hyprorbit/internal/runtime"
 )
 
 func newModuleCommand() *cobra.Command {

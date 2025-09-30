@@ -10,10 +10,10 @@ import (
 	"strings"
 	"sync"
 
-	"hyprorbits/internal/config"
-	"hyprorbits/internal/hyprctl"
-	"hyprorbits/internal/orbit"
-	"hyprorbits/internal/runtime"
+	"hyprorbit/internal/config"
+	"hyprorbit/internal/hyprctl"
+	"hyprorbit/internal/orbit"
+	"hyprorbit/internal/runtime"
 )
 
 // OrbitAccessor captures the orbit functionality required by the module service.

@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
-	"hyprorbits/internal/app/service"
-	"hyprorbits/internal/config"
+	"hyprorbit/internal/app/service"
+	"hyprorbit/internal/config"
 )
 
 type moduleWatchFormatterOptions struct {

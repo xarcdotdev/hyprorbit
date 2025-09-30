@@ -7,11 +7,11 @@ import (
 	"net"
 	"strings"
 
-	"hyprorbits/internal/hyprctl"
-	"hyprorbits/internal/ipc"
-	"hyprorbits/internal/module"
-	"hyprorbits/internal/orbit"
-	"hyprorbits/internal/runtime"
+	"hyprorbit/internal/hyprctl"
+	"hyprorbit/internal/ipc"
+	"hyprorbit/internal/module"
+	"hyprorbit/internal/orbit"
+	"hyprorbit/internal/runtime"
 )
 
 // Dispatcher routes IPC requests to domain handlers.

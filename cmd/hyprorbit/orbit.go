@@ -3,7 +3,7 @@ package main
 import (
 	"github.com/spf13/cobra"
 
-	"hyprorbits/internal/app/ctl"
+	"hyprorbit/internal/app/ctl"
 )
 
 func newOrbitCommand() *cobra.Command {

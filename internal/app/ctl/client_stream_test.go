@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"hyprorbits/internal/app/service"
-	"hyprorbits/internal/ipc"
-	"hyprorbits/internal/orbit"
+	"hyprorbit/internal/app/service"
+	"hyprorbit/internal/ipc"
+	"hyprorbit/internal/orbit"
 )
 
 func TestClientModuleWatch(t *testing.T) {

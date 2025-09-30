@@ -10,7 +10,7 @@ import (
 	"strings"
 	"sync"
 
-	"hyprorbits/internal/config"
+	"hyprorbit/internal/config"
 )
 
 // Options configures the orbit state manager.
