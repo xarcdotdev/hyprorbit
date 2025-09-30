@@ -8,16 +8,16 @@
 <h2 align="center">hyprørbit</h2>
 
   <p align="center">
-Lightning-fast workspace orchestration for Hyprland - orbit-focused task switching with sub-5ms responsiveness.
+Lightweight workspace orchestration for Hyprland with sub-5ms responsiveness.
     <br>
 
-**hyprorbit** is a stateful daemon + lightweight client system for Hyprland workspace management, written in Go. It provides context-based switching between sets of workspaces (orbits) with stable module hotkeys, focus-or-launch semantics, and intelligent window management.
+**hyprorbit** is a stateful daemon + lightweight client system for Hyprland workspace management, written in Go.
 
 <br>
 
-<a href="https://github.com/yourusername/hyprorbit/issues/new?labels=bug&template=bug-report---.md">Report Bug</a>
+<a href="https://github.com/xarcdotdev/hyprorbit/issues/new?labels=bug&template=bug-report---.md">Report Bug</a>
 &middot;
-<a href="https://github.com/yourusername/hyprorbit/issues/new?labels=enhancement&template=feature-request---.md">Request Feature</a>
+<a href="https://github.com/xarcdotdev/hyprorbit/issues/new?labels=enhancement&template=feature-request---.md">Request Feature</a>
   </p>
 
 [![Contributors][contributors-shield]][contributors-url]
@@ -31,29 +31,28 @@ Lightning-fast workspace orchestration for Hyprland - orbit-focused task switchi
 <!-- ABOUT THE PROJECT -->
 ## What is hyprorbit?
 
-Use `hyprorbit module focus code` to instantly switch to your code workspace. hyprorbit manages independent "orbit" contexts while keeping your hotkeys stable across all workspace sets.
+**The Problem**: You've organized your Hyprland workspaces perfectly: SUPER+1 for coding, SUPER+2 for communication, etc. But what happens when you need to switch contexts? Work on a different project? Take a break? You either clutter your organized workspace or lose your setup entirely.
+
+**The Solution**: hyprorbit gives you multiple "orbits" (contexts) with identical workspace layouts. Switch between a work orbit, personal orbit, or emergency-fix orbit while keeping your muscle memory intact.
+
+- Same keybindings across all contexts
+- Clean workspace separation by project/mood
+- Instant context switching without losing your setup
+
+Use `hyprorbit module focus code` to instantly switch to your code workspace.
+Use `hyprorbit orbit next` to cycle through your configured orbits.
 
 <!-- <div align="center">
 ![Product Demo][product-screenshot]
 </div> -->
 
-### Features
+### Key Features
 
-🚀 **Sub-5ms Response**: Daemon-based architecture for instant hotkey responsiveness<br>
-🌌 **Orbit Contexts**: Independent workspace sets you can cycle through (`alpha`, `beta`, `gamma`)<br>
-🎯 **Stable Hotkeys**: `SUPER+1` always goes to "code" module regardless of active orbit<br>
-🔄 **Focus-or-Launch**: Smart window management - focus existing, move if needed, or spawn new<br>
-📋 **Window Matching**: Regex-based window matching by class, title, or initial properties<br>
-⚡ **Intelligent Caching**: Hyprland client list caching with smart invalidation
-
-### Why hyprorbit?
-
-- **Need instant workspace switching?** Sub-5ms response times via persistent daemon.
-- **Managing multiple project contexts?** Orbit-based separation with consistent hotkeys.
-- **Want smart window management?** Focus-or-launch prevents duplicate windows.
-- **Tired of workspace chaos?** Structured module-based organization.
-
-**⚡ hyprorbit** eliminates the friction of context switching in Hyprland, making workspace management feel instant and intuitive.
+- **Sub-5ms response times** via persistent daemon
+- **Orbit contexts** - separate workspace sets for different projects
+- **Stable hotkeys** - same keybindings across all orbits
+- **Focus-or-launch** - smart window management prevents duplicates
+- **Regex window matching** by class, title, or initial properties
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -64,17 +63,11 @@ Use `hyprorbit module focus code` to instantly switch to your code workspace. hy
 - [Hyprland](https://hyprland.org/) compositor
 - Go 1.21+
 
-### 2. Install - [WIP]
+### 2. Install
 
-#### From source
 ```sh
-go install github.com/yourusername/hyprorbit/cmd/hyprorbitd@latest
-go install github.com/yourusername/hyprorbit/cmd/hyprorbit@latest
-```
-
-#### Clone and build
-```sh
-git clone https://github.com/yourusername/hyprorbit.git
+# Clone and build
+git clone https://github.com/xarcdotdev/hyprorbit.git
 cd hyprorbit
 go build ./cmd/hyprorbitd
 go build ./cmd/hyprorbit
@@ -190,11 +183,6 @@ hyprorbit module focus code --no-move
 hyprorbit module jump code
 ```
 
-**Module seed - [WIP]:**
-```sh
-# Populate empty workspace with configured apps
-hyprorbit module seed code
-```
 
 ### Output Formats
 
@@ -231,13 +219,12 @@ $ hyprorbit orbit get --quiet
 - **Override**: `--config <path>` flag
 - **Environment**: `HYPR_ORBITS_SOCKET` for custom socket path
 
-### Configuration Schema - [WIP]
+### Configuration Schema
 
 ```yaml
 orbits:
   - name: "alpha"       # Required: alphanumeric identifier
     label: "α"          # Optional: display text
-    color: "#BC83F9"    # Optional: CSS/hex color
   - name: "beta"
     label: "β"
   - name: "gamma"
@@ -245,10 +232,9 @@ orbits:
 
 modules:
   code:
-    hotkey: "SUPER+1"   # Documentation only
     focus:
       match: "class=.*Code"              # Window matcher
-      cmd: ["kitty", "-T", "Code"]       # Spawn command
+      cmd: ["ghostty", "-T", "Code"]       # Spawn command
       workspace_type: "stack"            # Layout hint
   comm:
     focus:
@@ -305,9 +291,11 @@ kill -HUP $(pgrep hyprorbitd)
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-## Advanced Usage - [WIP]
+## Advanced Usage
 
 ### Status Bar Integration
+
+For a more performant and configurable waybar integration check out docs/WAYBAR.md
 
 **Waybar example:**
 ```json
@@ -338,7 +326,7 @@ WantedBy=default.target
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-## Troubleshooting - [WIP]
+## Troubleshooting
 
 ### Common Issues
 
@@ -371,21 +359,21 @@ hyprorbit module focus code --match "class=.*" --no-move
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-## Roadmap - [WIP]
+## Roadmap
 
 ### Current Status
 - ✅ Basic orbit management
 - ✅ Module focus/jump commands
 - ✅ Window matching system
 - ✅ Configuration system
-- 🚧 Daemon implementation
-- 🚧 IPC protocol
-- 🚧 Client-server architecture
+- ✅ Daemon implementation
+- ✅ IPC protocol
+- ✅ Client-server architecture
+- ✅ Waybar/status bar module
+- ✅ Native Hyprland socket integration
 
 ### Planned Features
 - 📋 Module seeding (populate workspace with multiple apps)
-- 📊 Waybar/status bar module
-- 🔌 Native Hyprland socket integration
 - 💾 State snapshots across reboots
 - 🔔 Desktop notifications
 - 📦 Package distribution (AUR, Nix)
@@ -399,7 +387,7 @@ Issues and PRs welcome! Please check existing issues before creating new ones.
 ### Development
 ```sh
 # Clone repository
-git clone https://github.com/yourusername/hyprorbit.git
+git clone https://github.com/xarcdotdev/hyprorbit.git
 cd hyprorbit
 
 # Build both binaries
@@ -421,23 +409,23 @@ See `LICENSE` for details.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-## Contact - [WIP]
+## Contact
 
-Project Link: [https://github.com/yourusername/hyprorbit](https://github.com/hyprorbit/hyprorbit)
+Project Link: [https://github.com/xarcdotdev/hyprorbit](https://github.com/xarcdotdev/hyprorbit)
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 <!-- MARKDOWN LINKS & IMAGES -->
-[contributors-shield]: https://img.shields.io/github/contributors/yourusername/hyprorbit.svg?style=for-the-badge
-[contributors-url]: https://github.com/yourusername/hyprorbit/graphs/contributors
-[forks-shield]: https://img.shields.io/github/forks/yourusername/hyprorbit.svg?style=for-the-badge
-[forks-url]: https://github.com/yourusername/hyprorbit/network/members
-[stars-shield]: https://img.shields.io/github/stars/yourusername/hyprorbit.svg?style=for-the-badge
-[stars-url]: https://github.com/yourusername/hyprorbit/stargazers
-[issues-shield]: https://img.shields.io/github/issues/yourusername/hyprorbit.svg?style=for-the-badge
-[issues-url]: https://github.com/yourusername/hyprorbit/issues
-[license-shield]: https://img.shields.io/github/license/yourusername/hyprorbit.svg?style=for-the-badge
-[license-url]: https://github.com/yourusername/hyprorbit/blob/master/LICENSE
+[contributors-shield]: https://img.shields.io/github/contributors/xarcdotdev/hyprorbit.svg?style=for-the-badge
+[contributors-url]: https://github.com/xarcdotdev/hyprorbit/graphs/contributors
+[forks-shield]: https://img.shields.io/github/forks/xarcdotdev/hyprorbit.svg?style=for-the-badge
+[forks-url]: https://github.com/xarcdotdev/hyprorbit/network/members
+[stars-shield]: https://img.shields.io/github/stars/xarcdotdev/hyprorbit.svg?style=for-the-badge
+[stars-url]: https://github.com/xarcdotdev/hyprorbit/stargazers
+[issues-shield]: https://img.shields.io/github/issues/xarcdotdev/hyprorbit.svg?style=for-the-badge
+[issues-url]: https://github.com/xarcdotdev/hyprorbit/issues
+[license-shield]: https://img.shields.io/github/license/xarcdotdev/hyprorbit.svg?style=for-the-badge
+[license-url]: https://github.com/xarcdotdev/hyprorbit/blob/master/LICENSE
 [product-screenshot]: docs/images/demo.gif
 
 [Go.dev]: https://go.dev/
