@@ -1,11 +1,15 @@
 package main
 
 import (
+	"bufio"
+	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
 	"hyprorbits/internal/app/ctl"
+	"hyprorbits/internal/app/service"
 	"hyprorbits/internal/module"
 	"hyprorbits/internal/runtime"
 )
@@ -21,6 +25,7 @@ func newModuleCommand() *cobra.Command {
 	moduleCmd.AddCommand(newModuleFocusCommand())
 	moduleCmd.AddCommand(newModuleSeedCommand())
 	moduleCmd.AddCommand(newModuleListCommand())
+	moduleCmd.AddCommand(newModuleWatchCommand())
 
 	return moduleCmd
 }
@@ -127,6 +132,64 @@ func newModuleSeedCommand() *cobra.Command {
 	}
 }
 
+func newModuleWatchCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "watch",
+		Short: "Stream module status updates",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, err := ctl.FromContext(cmd.Context())
+			if err != nil {
+				return err
+			}
+
+			stream, err := client.ModuleWatch(cmd.Context())
+			if err != nil {
+				return err
+			}
+			defer stream.Close()
+
+			opts := client.Options()
+			scanner := bufio.NewScanner(stream)
+			scanner.Buffer(make([]byte, 0, 4096), 256*1024)
+			writer := cmd.OutOrStdout()
+
+			for scanner.Scan() {
+				if opts.Quiet {
+					continue
+				}
+				line := scanner.Bytes()
+
+				if opts.JSON {
+					if _, err := fmt.Fprintln(writer, string(line)); err != nil {
+						return err
+					}
+					continue
+				}
+
+				var snapshot service.StatusSnapshot
+				if err := json.Unmarshal(line, &snapshot); err != nil {
+					return fmt.Errorf("module watch: decode snapshot: %w", err)
+				}
+
+				payload, err := marshalWaybarSnapshot(snapshot)
+				if err != nil {
+					return err
+				}
+
+				if _, err := fmt.Fprintln(writer, string(payload)); err != nil {
+					return err
+				}
+			}
+
+			if err := scanner.Err(); err != nil && cmd.Context().Err() == nil {
+				return fmt.Errorf("module watch: stream: %w", err)
+			}
+			return nil
+		},
+	}
+}
+
 func newModuleListCommand() *cobra.Command {
 	var (
 		flagActive   bool
@@ -175,4 +238,56 @@ func newModuleListCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&flagAll, "all", false, "Show all workspaces (default)")
 
 	return cmd
+}
+
+func marshalWaybarSnapshot(snapshot service.StatusSnapshot) ([]byte, error) {
+	text := snapshot.Module
+	if text == "" {
+		text = snapshot.Workspace
+	}
+
+	payload := map[string]any{
+		"text":      text,
+		"workspace": snapshot.Workspace,
+		"module":    snapshot.Module,
+	}
+
+	tooltip := snapshot.Workspace
+	if tooltip == "" && snapshot.Orbit != nil && snapshot.Orbit.Name != "" {
+		tooltip = snapshot.Orbit.Name
+	}
+	if snapshot.Orbit != nil && snapshot.Orbit.Label != "" {
+		tooltip = snapshot.Orbit.Label
+	}
+	if tooltip != "" {
+		payload["tooltip"] = tooltip
+	}
+
+	if snapshot.Workspace != "" {
+		payload["alt"] = snapshot.Workspace
+	}
+
+	classes := make([]string, 0, 3)
+	if snapshot.Module != "" {
+		classes = append(classes, snapshot.Module)
+	}
+	if snapshot.Orbit != nil && snapshot.Orbit.Name != "" {
+		classes = append(classes, snapshot.Orbit.Name)
+		payload["orbit"] = snapshot.Orbit.Name
+	}
+	if len(classes) > 0 {
+		payload["class"] = strings.Join(classes, " ")
+	}
+
+	if snapshot.Orbit != nil {
+		payload["orbit_record"] = snapshot.Orbit
+		if snapshot.Orbit.Label != "" {
+			payload["orbit_label"] = snapshot.Orbit.Label
+		}
+		if snapshot.Orbit.Color != "" {
+			payload["color"] = snapshot.Orbit.Color
+		}
+	}
+
+	return json.Marshal(payload)
 }

@@ -16,11 +16,12 @@ type Request struct {
 
 // Response represents the reply emitted by the daemon for a given request.
 type Response struct {
-	Version  uint16          `json:"version"`
-	Success  bool            `json:"success"`
-	Data     json.RawMessage `json:"data,omitempty"`
-	Error    string          `json:"error,omitempty"`
-	ExitCode int             `json:"exit_code"`
+	Version   uint16          `json:"version"`
+	Success   bool            `json:"success"`
+	Data      json.RawMessage `json:"data,omitempty"`
+	Error     string          `json:"error,omitempty"`
+	ExitCode  int             `json:"exit_code"`
+	Streaming bool            `json:"streaming,omitempty"`
 }
 
 // NewRequest builds a request with the current protocol version applied.

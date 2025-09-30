@@ -2,11 +2,13 @@ package ipc
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -46,9 +48,41 @@ func DialContext(ctx context.Context, opts DialOptions) (net.Conn, error) {
 	dialer := net.Dialer{Timeout: timeout}
 	conn, err := dialer.DialContext(ctx, "unix", path)
 	if err != nil {
+		if isDaemonOfflineError(err) {
+			return nil, &DaemonOfflineError{Path: path, Cause: err}
+		}
 		return nil, fmt.Errorf("ipc: dial %s: %w", path, err)
 	}
 	return conn, nil
+}
+
+// DaemonOfflineError indicates the absence of a responsive hyprorbits daemon socket.
+type DaemonOfflineError struct {
+	Path  string
+	Cause error
+}
+
+// Error implements the error interface.
+func (e *DaemonOfflineError) Error() string {
+	if e == nil {
+		return ""
+	}
+	return fmt.Sprintf("hyprorbits daemon is not running (expected socket at %s). Start it (e.g. `hyprorbitsd`).", e.Path)
+}
+
+// Unwrap exposes the underlying dial failure (e.g. ENOENT, ECONNREFUSED).
+func (e *DaemonOfflineError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Cause
+}
+
+func isDaemonOfflineError(err error) bool {
+	return errors.Is(err, os.ErrNotExist) ||
+		errors.Is(err, os.ErrPermission) ||
+		errors.Is(err, syscall.EPERM) ||
+		errors.Is(err, syscall.ECONNREFUSED)
 }
 
 // ResolveSocketPath picks a socket location using explicit path, environment, then defaults.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"strings"
 
 	"hyprorbits/internal/hyprctl"
@@ -18,63 +19,69 @@ type Dispatcher struct {
 	state *DaemonState
 }
 
+// StreamHandler streams data back to a client over an established IPC connection.
+type StreamHandler func(ctx context.Context, conn net.Conn) error
+
 // NewDispatcher constructs a dispatcher bound to the daemon state.
 func NewDispatcher(state *DaemonState) *Dispatcher {
 	return &Dispatcher{state: state}
 }
 
-// Handle executes the request, returning a response suitable for IPC clients.
-func (d *Dispatcher) Handle(ctx context.Context, req ipc.Request) (ipc.Response, error) {
+// Handle executes the request, returning a response suitable for IPC clients and an optional stream handler.
+func (d *Dispatcher) Handle(ctx context.Context, req ipc.Request) (ipc.Response, StreamHandler, error) {
 	if req.Version != ipc.Version {
 		resp := ipc.NewResponse(false)
 		resp.Error = fmt.Sprintf("unsupported protocol version %d", req.Version)
 		resp.ExitCode = 1
-		return resp, nil
+		return resp, nil, nil
 	}
 
 	switch req.Command {
 	case "orbit":
-		return d.handleOrbit(ctx, req), nil
+		resp, stream := d.handleOrbit(ctx, req)
+		return resp, stream, nil
 	case "module":
-		return d.handleModule(ctx, req), nil
+		return d.handleModule(ctx, req)
 	case "daemon":
-		return d.handleDaemon(ctx, req), nil
+		resp, stream := d.handleDaemon(ctx, req)
+		return resp, stream, nil
 	default:
 		resp := ipc.NewResponse(false)
 		resp.Error = fmt.Sprintf("unknown command %q", req.Command)
+		resp.ExitCode = 2
+		return resp, nil, nil
+	}
+}
+
+func (d *Dispatcher) handleDaemon(ctx context.Context, req ipc.Request) (ipc.Response, StreamHandler) {
+	resp := ipc.NewResponse(false)
+	switch req.Action {
+	case "status":
+		resp.Success = true
+		return resp, nil
+	case "reload":
+		if err := d.state.Reload(ctx); err != nil {
+			resp.Error = err.Error()
+			resp.ExitCode = 1
+			return resp, nil
+		}
+		resp.Success = true
+		d.publishSnapshot()
+		return resp, nil
+	default:
+		resp.Error = fmt.Sprintf("unknown daemon action %q", req.Action)
 		resp.ExitCode = 2
 		return resp, nil
 	}
 }
 
-func (d *Dispatcher) handleDaemon(ctx context.Context, req ipc.Request) ipc.Response {
-	resp := ipc.NewResponse(false)
-	switch req.Action {
-	case "status":
-		resp.Success = true
-		return resp
-	case "reload":
-		if err := d.state.Reload(ctx); err != nil {
-			resp.Error = err.Error()
-			resp.ExitCode = 1
-			return resp
-		}
-		resp.Success = true
-		return resp
-	default:
-		resp.Error = fmt.Sprintf("unknown daemon action %q", req.Action)
-		resp.ExitCode = 2
-		return resp
-	}
-}
-
-func (d *Dispatcher) handleOrbit(ctx context.Context, req ipc.Request) ipc.Response {
+func (d *Dispatcher) handleOrbit(ctx context.Context, req ipc.Request) (ipc.Response, StreamHandler) {
 	resp := ipc.NewResponse(false)
 	svc := d.state.OrbitService()
 	if svc == nil {
 		resp.Error = "orbit service unavailable"
 		resp.ExitCode = 1
-		return resp
+		return resp, nil
 	}
 
 	switch req.Action {
@@ -83,20 +90,20 @@ func (d *Dispatcher) handleOrbit(ctx context.Context, req ipc.Request) ipc.Respo
 		if err != nil {
 			resp.Error = err.Error()
 			resp.ExitCode = 1
-			return resp
+			return resp, nil
 		}
 		record, err := svc.Record(ctx, name)
 		if err != nil {
 			resp.Error = err.Error()
 			resp.ExitCode = 1
-			return resp
+			return resp, nil
 		}
 		if err := assignData(&resp, record); err != nil {
 			resp.Error = err.Error()
 			resp.ExitCode = 1
-			return resp
+			return resp, nil
 		}
-		return resp
+		return resp, nil
 	case "next":
 		return d.handleOrbitStep(ctx, svc, 1)
 	case "prev":
@@ -105,58 +112,59 @@ func (d *Dispatcher) handleOrbit(ctx context.Context, req ipc.Request) ipc.Respo
 		if len(req.Args) != 1 {
 			resp.Error = "orbit set requires exactly one argument"
 			resp.ExitCode = 2
-			return resp
+			return resp, nil
 		}
 		target := req.Args[0]
 		record, err := svc.Record(ctx, target)
 		if err != nil {
 			resp.Error = err.Error()
 			resp.ExitCode = 2
-			return resp
+			return resp, nil
 		}
 		if err := svc.Set(ctx, target); err != nil {
 			resp.Error = err.Error()
 			resp.ExitCode = 1
-			return resp
+			return resp, nil
 		}
 		d.state.InvalidateClients()
 		if err := assignData(&resp, record); err != nil {
 			resp.Error = err.Error()
 			resp.ExitCode = 1
-			return resp
+			return resp, nil
 		}
-		return resp
+		d.publishSnapshot()
+		return resp, nil
 	default:
 		resp.Error = fmt.Sprintf("unknown orbit action %q", req.Action)
 		resp.ExitCode = 2
-		return resp
+		return resp, nil
 	}
 }
 
-func (d *Dispatcher) handleOrbitStep(ctx context.Context, svc *orbit.Service, delta int) ipc.Response {
+func (d *Dispatcher) handleOrbitStep(ctx context.Context, svc *orbit.Service, delta int) (ipc.Response, StreamHandler) {
 	resp := ipc.NewResponse(false)
 	seq, err := svc.Sequence(ctx)
 	if err != nil {
 		resp.Error = err.Error()
 		resp.ExitCode = 1
-		return resp
+		return resp, nil
 	}
 	if len(seq) == 0 {
 		resp.Error = "orbit: no orbits configured"
 		resp.ExitCode = 1
-		return resp
+		return resp, nil
 	}
 	current, err := svc.Current(ctx)
 	if err != nil {
 		resp.Error = err.Error()
 		resp.ExitCode = 1
-		return resp
+		return resp, nil
 	}
 	idx := indexOf(seq, current)
 	if idx == -1 {
 		resp.Error = fmt.Sprintf("orbit: current orbit %q not found", current)
 		resp.ExitCode = 1
-		return resp
+		return resp, nil
 	}
 	var nextIdx int
 	if delta > 0 {
@@ -171,30 +179,31 @@ func (d *Dispatcher) handleOrbitStep(ctx context.Context, svc *orbit.Service, de
 	if err := svc.Set(ctx, name); err != nil {
 		resp.Error = err.Error()
 		resp.ExitCode = 1
-		return resp
+		return resp, nil
 	}
 	d.state.InvalidateClients()
 	record, err := svc.Record(ctx, name)
 	if err != nil {
 		resp.Error = err.Error()
 		resp.ExitCode = 1
-		return resp
+		return resp, nil
 	}
 	if err := assignData(&resp, record); err != nil {
 		resp.Error = err.Error()
 		resp.ExitCode = 1
-		return resp
+		return resp, nil
 	}
-	return resp
+	d.publishSnapshot()
+	return resp, nil
 }
 
-func (d *Dispatcher) handleModule(ctx context.Context, req ipc.Request) ipc.Response {
+func (d *Dispatcher) handleModule(ctx context.Context, req ipc.Request) (ipc.Response, StreamHandler, error) {
 	resp := ipc.NewResponse(false)
 	svc := d.state.ModuleService()
 	if svc == nil {
 		resp.Error = "module service unavailable"
 		resp.ExitCode = 1
-		return resp
+		return resp, nil, nil
 	}
 
 	switch req.Action {
@@ -203,52 +212,58 @@ func (d *Dispatcher) handleModule(ctx context.Context, req ipc.Request) ipc.Resp
 		if err != nil {
 			resp.Error = err.Error()
 			resp.ExitCode = 2
-			return resp
+			return resp, nil, nil
 		}
 		summaries, err := svc.WorkspaceSummaries(ctx)
 		if err != nil {
 			resp.Error = err.Error()
 			resp.ExitCode = 1
-			return resp
+			return resp, nil, nil
 		}
 		filtered := filterWorkspaceSummaries(summaries, filter)
 		if err := assignData(&resp, filtered); err != nil {
 			resp.Error = err.Error()
 			resp.ExitCode = 1
-			return resp
+			return resp, nil, nil
 		}
-		return resp
+		return resp, nil, nil
+	case "status-stream":
+		resp.Success = true
+		resp.Streaming = true
+		return resp, d.streamModuleStatus(), nil
 	case "workspace-reset":
 		if err := d.resetWorkspaces(ctx); err != nil {
 			resp.Error = err.Error()
 			resp.ExitCode = 1
-			return resp
+			return resp, nil, nil
 		}
 		resp.Success = true
-		return resp
+		d.publishSnapshot()
+		return resp, nil, nil
 	case "workspace-align":
 		if err := d.alignWorkspace(ctx); err != nil {
 			resp.Error = err.Error()
 			resp.ExitCode = 1
-			return resp
+			return resp, nil, nil
 		}
 		resp.Success = true
-		return resp
+		d.publishSnapshot()
+		return resp, nil, nil
 	case "get":
-		return d.handleModuleGet(ctx)
+		return d.handleModuleGet(ctx), nil, nil
 	}
 
 	if len(req.Args) == 0 {
 		resp.Error = "module command requires a module name"
 		resp.ExitCode = 2
-		return resp
+		return resp, nil, nil
 	}
 	moduleName := req.Args[0]
 	if _, ok := svc.Module(moduleName); !ok {
 		available := strings.Join(svc.ModuleNames(), ", ")
 		resp.Error = fmt.Sprintf("module %q not configured (available: %s)", moduleName, available)
 		resp.ExitCode = 2
-		return resp
+		return resp, nil, nil
 	}
 
 	switch req.Action {
@@ -257,39 +272,41 @@ func (d *Dispatcher) handleModule(ctx context.Context, req ipc.Request) ipc.Resp
 		if err != nil {
 			resp.Error = err.Error()
 			resp.ExitCode = 2
-			return resp
+			return resp, nil, nil
 		}
 		result, err := svc.Focus(ctx, moduleName, opts)
 		if err != nil {
 			resp.Error = err.Error()
 			resp.ExitCode = 1
-			return resp
+			return resp, nil, nil
 		}
 		if err := assignData(&resp, result); err != nil {
 			resp.Error = err.Error()
 			resp.ExitCode = 1
-			return resp
+			return resp, nil, nil
 		}
-		return resp
+		d.publishSnapshot()
+		return resp, nil, nil
 	case "jump":
 		result, err := svc.Jump(ctx, moduleName)
 		if err != nil {
 			resp.Error = err.Error()
 			resp.ExitCode = 1
-			return resp
+			return resp, nil, nil
 		}
 		if err := assignData(&resp, result); err != nil {
 			resp.Error = err.Error()
 			resp.ExitCode = 1
-			return resp
+			return resp, nil, nil
 		}
-		return resp
+		d.publishSnapshot()
+		return resp, nil, nil
 	case "seed":
 		results, err := svc.Seed(ctx, moduleName)
 		if err != nil {
 			resp.Error = err.Error()
 			resp.ExitCode = 1
-			return resp
+			return resp, nil, nil
 		}
 		if results == nil {
 			results = []*module.Result{}
@@ -297,13 +314,13 @@ func (d *Dispatcher) handleModule(ctx context.Context, req ipc.Request) ipc.Resp
 		if err := assignData(&resp, results); err != nil {
 			resp.Error = err.Error()
 			resp.ExitCode = 1
-			return resp
+			return resp, nil, nil
 		}
-		return resp
+		return resp, nil, nil
 	default:
 		resp.Error = fmt.Sprintf("unknown module action %q", req.Action)
 		resp.ExitCode = 2
-		return resp
+		return resp, nil, nil
 	}
 }
 
@@ -358,6 +375,54 @@ func (d *Dispatcher) handleModuleGet(ctx context.Context) ipc.Response {
 		return resp
 	}
 	return resp
+}
+
+func (d *Dispatcher) publishSnapshot() {
+	if d == nil || d.state == nil {
+		return
+	}
+	if err := d.state.PublishSnapshot(context.Background()); err != nil {
+		d.state.Logf("snapshot publish: %v", err)
+	}
+}
+
+func (d *Dispatcher) streamModuleStatus() StreamHandler {
+	return func(ctx context.Context, conn net.Conn) error {
+		if d == nil || d.state == nil {
+			return fmt.Errorf("dispatcher unavailable")
+		}
+
+		streamCtx := ctx
+		if streamCtx == nil {
+			streamCtx = context.Background()
+		}
+
+		streamCtx, cancel := context.WithCancel(streamCtx)
+		defer cancel()
+
+		ch, unsubscribe := d.state.SubscribeSnapshots(streamCtx)
+		defer unsubscribe()
+
+		if err := d.state.PublishSnapshot(context.Background()); err != nil {
+			d.state.Logf("snapshot publish: %v", err)
+		}
+
+		encoder := json.NewEncoder(conn)
+
+		for {
+			select {
+			case <-streamCtx.Done():
+				return streamCtx.Err()
+			case snapshot, ok := <-ch:
+				if !ok {
+					return nil
+				}
+				if err := encoder.Encode(snapshot); err != nil {
+					return err
+				}
+			}
+		}
+	}
 }
 
 func listFilterFromFlags(flags map[string]any) (string, error) {

@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net"
+	"sync"
 	"time"
 
 	"hyprorbits/internal/ipc"
@@ -25,6 +28,21 @@ type Client struct {
 	opts Options
 }
 
+type streamReadCloser struct {
+	net.Conn
+	once sync.Once
+}
+
+var dialIPC = ipc.DialContext
+
+func (s *streamReadCloser) Close() error {
+	var err error
+	s.once.Do(func() {
+		err = s.Conn.Close()
+	})
+	return err
+}
+
 // NewClient initialises an IPC client with the given options.
 func NewClient(opts Options) *Client {
 	return &Client{opts: opts}
@@ -37,7 +55,7 @@ func (c *Client) Options() Options {
 
 // Call issues an IPC request and optionally decodes the response payload into target.
 func (c *Client) Call(ctx context.Context, req ipc.Request, target any) (*ipc.Response, error) {
-	conn, err := ipc.DialContext(ctx, ipc.DialOptions{SocketPath: c.opts.SocketPath, Timeout: c.opts.Timeout})
+	conn, err := dialIPC(ctx, ipc.DialOptions{SocketPath: c.opts.SocketPath, Timeout: c.opts.Timeout})
 	if err != nil {
 		return nil, err
 	}
@@ -162,6 +180,58 @@ func (c *Client) ModuleJump(ctx context.Context, moduleName string) (*module.Res
 		return nil, err
 	}
 	return &res, nil
+}
+
+// ModuleWatch opens a streaming status feed for module/orbit snapshots.
+func (c *Client) ModuleWatch(ctx context.Context) (io.ReadCloser, error) {
+	conn, err := dialIPC(ctx, ipc.DialOptions{SocketPath: c.opts.SocketPath, Timeout: c.opts.Timeout})
+	if err != nil {
+		return nil, err
+	}
+
+	enc := json.NewEncoder(conn)
+	dec := json.NewDecoder(conn)
+
+	req := ipc.NewRequest("module", "status-stream")
+	if err := enc.Encode(&req); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("ipc: send request: %w", err)
+	}
+
+	var resp ipc.Response
+	if err := dec.Decode(&resp); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("ipc: decode response: %w", err)
+	}
+
+	if resp.Version != ipc.Version {
+		conn.Close()
+		return nil, &Error{Message: fmt.Sprintf("protocol mismatch: expected %d, got %d", ipc.Version, resp.Version), Code: 1}
+	}
+
+	if !resp.Success {
+		msg := resp.Error
+		if msg == "" {
+			msg = "daemon returned an error"
+		}
+		conn.Close()
+		return nil, &Error{Message: msg, Code: resp.ExitCode}
+	}
+
+	if !resp.Streaming {
+		conn.Close()
+		return nil, fmt.Errorf("ipc: daemon response is not streaming")
+	}
+
+	stream := &streamReadCloser{Conn: conn}
+	if ctx != nil {
+		go func() {
+			<-ctx.Done()
+			_ = stream.Close()
+		}()
+	}
+
+	return stream, nil
 }
 
 // ModuleGet returns metadata about the currently active module workspace.

@@ -2,15 +2,21 @@ package service
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"sync"
+	"time"
 
 	"hyprorbits/internal/config"
 	"hyprorbits/internal/hyprctl"
+	"hyprorbits/internal/hyprctl/events"
 	"hyprorbits/internal/module"
 	"hyprorbits/internal/orbit"
 	"hyprorbits/internal/runtime"
 	"hyprorbits/internal/state"
 )
+
+const snapshotQueryTimeout = 1200 * time.Millisecond
 
 // DaemonState aggregates long-lived daemon dependencies for hyprorbitsd.
 type DaemonState struct {
@@ -23,6 +29,17 @@ type DaemonState struct {
 	orbitSvc  *orbit.Service
 	moduleSvc *module.Service
 	hyprctl   runtime.HyprctlClient
+
+	broadcaster *StatusBroadcaster
+
+	eventsSub    *events.Subscriber
+	eventsCancel context.CancelFunc
+
+	wg        sync.WaitGroup
+	startOnce sync.Once
+	stopOnce  sync.Once
+
+	logger func(string, ...any)
 }
 
 // NewDaemonState loads configuration and assembles domain services for the daemon.
@@ -62,14 +79,68 @@ func NewDaemonState(ctx context.Context, opts Options) (*DaemonState, error) {
 	}
 
 	return &DaemonState{
-		opts:       opts,
-		loaderOpts: loaderOpts,
-		config:     cfg,
-		orbitMgr:   orbitMgr,
-		orbitSvc:   orbitSvc,
-		moduleSvc:  moduleSvc,
-		hyprctl:    hyprClient,
+		opts:        opts,
+		loaderOpts:  loaderOpts,
+		config:      cfg,
+		orbitMgr:    orbitMgr,
+		orbitSvc:    orbitSvc,
+		moduleSvc:   moduleSvc,
+		hyprctl:     hyprClient,
+		broadcaster: NewStatusBroadcaster(0),
+		logger:      func(string, ...any) {},
 	}, nil
+}
+
+// Start activates background event consumers for the daemon.
+func (s *DaemonState) Start(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	var startErr error
+	s.startOnce.Do(func() {
+		sub, err := events.NewSubscriber(events.Options{
+			Logf: func(format string, args ...any) { s.logf(format, args...) },
+		})
+		if err != nil {
+			startErr = err
+			return
+		}
+
+		subCtx, cancel := context.WithCancel(ctx)
+
+		s.mu.Lock()
+		s.eventsSub = sub
+		s.eventsCancel = cancel
+		s.mu.Unlock()
+
+		s.wg.Add(1)
+		go func() {
+			defer s.wg.Done()
+			s.consumeHyprEvents(subCtx, sub)
+		}()
+
+		sub.Start(subCtx)
+
+		if err := s.PublishSnapshot(context.Background()); err != nil {
+			s.logf("initial snapshot publish: %v", err)
+		}
+	})
+	return startErr
+}
+
+// Stop stops background consumers started via Start.
+func (s *DaemonState) Stop() {
+	s.stopOnce.Do(func() {
+		s.mu.Lock()
+		cancel := s.eventsCancel
+		s.eventsCancel = nil
+		s.mu.Unlock()
+		if cancel != nil {
+			cancel()
+		}
+		s.wg.Wait()
+	})
 }
 
 // Config returns the effective configuration snapshot.
@@ -96,6 +167,28 @@ func (s *DaemonState) ModuleService() *module.Service {
 // HyprctlClient exposes the underlying hyprctl client.
 func (s *DaemonState) HyprctlClient() runtime.HyprctlClient {
 	return s.hyprctl
+}
+
+// Broadcaster exposes the status broadcaster.
+func (s *DaemonState) Broadcaster() *StatusBroadcaster {
+	s.mu.RLock()
+	broadcaster := s.broadcaster
+	s.mu.RUnlock()
+	if broadcaster != nil {
+		return broadcaster
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.broadcaster == nil {
+		s.broadcaster = NewStatusBroadcaster(0)
+	}
+	return s.broadcaster
+}
+
+// SubscribeSnapshots registers a new snapshot subscriber bound to ctx.
+func (s *DaemonState) SubscribeSnapshots(ctx context.Context) (<-chan StatusSnapshot, func()) {
+	return s.Broadcaster().Subscribe(ctx)
 }
 
 // InvalidateClients clears the cached hyprctl client listing.
@@ -148,5 +241,138 @@ func (s *DaemonState) Reload(ctx context.Context) error {
 	if s.hyprctl != nil {
 		s.hyprctl.InvalidateClients()
 	}
+
+	if err := s.PublishSnapshot(context.Background()); err != nil {
+		s.logf("snapshot publish after reload: %v", err)
+	}
 	return nil
+}
+
+// PublishSnapshot computes and broadcasts the current status snapshot.
+func (s *DaemonState) PublishSnapshot(ctx context.Context) error {
+	broadcaster := s.Broadcaster()
+	if broadcaster == nil {
+		return fmt.Errorf("broadcaster unavailable")
+	}
+
+	snapshot, err := s.buildSnapshot(ctx)
+	if err != nil {
+		return err
+	}
+	if snapshot == nil {
+		return nil
+	}
+
+	snapshot.Generated = time.Now().UTC()
+	broadcaster.Publish(*snapshot)
+	return nil
+}
+
+func (s *DaemonState) buildSnapshot(ctx context.Context) (*StatusSnapshot, error) {
+	hypr := s.HyprctlClient()
+	if hypr == nil {
+		return nil, fmt.Errorf("hyprctl unavailable")
+	}
+
+	getter, ok := hypr.(interface {
+		ActiveWorkspace(context.Context) (*hyprctl.Workspace, error)
+	})
+	if !ok || getter == nil {
+		return nil, fmt.Errorf("hyprctl client does not expose active workspace")
+	}
+
+	baseCtx := ctx
+	if baseCtx == nil {
+		baseCtx = context.Background()
+	}
+	baseCtx, cancel := context.WithTimeout(baseCtx, snapshotQueryTimeout)
+	defer cancel()
+
+	ws, err := getter.ActiveWorkspace(baseCtx)
+	if err != nil {
+		return nil, err
+	}
+
+	snapshot := &StatusSnapshot{}
+	if ws != nil {
+		snapshot.Workspace = strings.TrimSpace(ws.Name)
+	}
+
+	if snapshot.Workspace == "" {
+		return snapshot, nil
+	}
+
+	moduleName, orbitName, err := module.ParseWorkspaceName(snapshot.Workspace)
+	if err != nil {
+		s.logf("snapshot parse workspace %q: %v", snapshot.Workspace, err)
+		return snapshot, nil
+	}
+
+	svc := s.ModuleService()
+	if svc == nil {
+		return snapshot, fmt.Errorf("module service unavailable")
+	}
+
+	status, err := svc.Status(baseCtx, moduleName, orbitName)
+	if err != nil {
+		s.logf("snapshot status %s/%s: %v", moduleName, orbitName, err)
+		return snapshot, nil
+	}
+
+	snapshot.Module = status.Module
+	snapshot.Orbit = &status.Orbit
+	return snapshot, nil
+}
+
+func (s *DaemonState) consumeHyprEvents(ctx context.Context, sub *events.Subscriber) {
+	eventsCh := sub.Events()
+	errsCh := sub.Errors()
+
+	for {
+		if eventsCh == nil && errsCh == nil {
+			return
+		}
+
+		select {
+		case <-ctx.Done():
+			return
+		case ev, ok := <-eventsCh:
+			if !ok {
+				eventsCh = nil
+				continue
+			}
+			if shouldPublishSnapshot(ev.Type) {
+				if err := s.PublishSnapshot(context.Background()); err != nil {
+					s.logf("snapshot publish: %v", err)
+				}
+			}
+		case err, ok := <-errsCh:
+			if !ok {
+				errsCh = nil
+				continue
+			}
+			s.logf("hyprland events: %v", err)
+		}
+	}
+}
+
+func shouldPublishSnapshot(t events.EventType) bool {
+	switch t {
+	case events.TypeWorkspace, events.TypeWorkspaceV2, events.TypeActiveWorkspace, events.TypeActiveWindow, events.TypeFocusedMonitor:
+		return true
+	default:
+		return false
+	}
+}
+
+// Logf records diagnostic messages if a logger is available.
+func (s *DaemonState) Logf(format string, args ...any) {
+	s.logf(format, args...)
+}
+
+func (s *DaemonState) logf(format string, args ...any) {
+	if s == nil || s.logger == nil {
+		return
+	}
+	s.logger(format, args...)
 }

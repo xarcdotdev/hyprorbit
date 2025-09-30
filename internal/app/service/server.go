@@ -46,6 +46,11 @@ func NewServer(ctx context.Context, opts Options) (*Server, error) {
 
 // Serve listens on the configured socket and processes requests until ctx is cancelled.
 func (s *Server) Serve(ctx context.Context) error {
+	if err := s.state.Start(ctx); err != nil {
+		return err
+	}
+	defer s.state.Stop()
+
 	path, err := ipc.ResolveSocketPath(s.opts.SocketPath)
 	if err != nil {
 		return err
@@ -118,6 +123,8 @@ func (s *Server) Serve(ctx context.Context) error {
 
 // Shutdown closes the listener and waits for in-flight handlers to complete.
 func (s *Server) Shutdown(ctx context.Context) error {
+	s.state.Stop()
+
 	s.mu.Lock()
 	if s.listener != nil {
 		s.listener.Close()
@@ -157,7 +164,7 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
 		return
 	}
 
-	resp, err := s.dispatcher.Handle(ctx, req)
+	resp, stream, err := s.dispatcher.Handle(ctx, req)
 	if err != nil {
 		resp.Success = false
 		resp.Error = err.Error()
@@ -166,7 +173,16 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
 		}
 	}
 
-	_ = encoder.Encode(resp)
+	if err := encoder.Encode(resp); err != nil {
+		return
+	}
+
+	if resp.Streaming && stream != nil {
+		_ = conn.SetDeadline(time.Time{})
+		if err := stream(ctx, conn); err != nil && !errors.Is(err, context.Canceled) {
+			s.state.Logf("stream handler: %v", err)
+		}
+	}
 }
 
 // State exposes the daemon state (primarily for testing hooks).
