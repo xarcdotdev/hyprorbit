@@ -21,6 +21,7 @@ type Options struct {
 	Quiet      bool
 	Timeout    time.Duration
 	NoColor    bool
+	ConfigPath string
 }
 
 // Client speaks the IPC protocol with the hyprorbits daemon.

@@ -263,4 +263,12 @@ modules:
 defaults:
   float: false
   move: true
+
+waybar:
+  module_watch:
+    text: ["module", "workspace"]
+    tooltip: ["orbit_label", "workspace"]
+    alt: ["workspace"]
+    class:
+      sources: ["module", "orbit"]
 `

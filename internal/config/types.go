@@ -17,6 +17,7 @@ type Config struct {
 	Orbits   []Orbit           `yaml:"orbits"`
 	Modules  map[string]Module `yaml:"modules"`
 	Defaults ModuleDefaults    `yaml:"defaults"`
+	Waybar   WaybarConfig      `yaml:"waybar"`
 	Extras   map[string]any    `yaml:",inline"`
 }
 

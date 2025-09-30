@@ -296,6 +296,8 @@ func (s *DaemonState) buildSnapshot(ctx context.Context) (*StatusSnapshot, error
 	snapshot := &StatusSnapshot{}
 	if ws != nil {
 		snapshot.Workspace = strings.TrimSpace(ws.Name)
+		snapshot.Windows = ws.Windows
+		snapshot.Monitor = ws.Monitor
 	}
 
 	if snapshot.Workspace == "" {

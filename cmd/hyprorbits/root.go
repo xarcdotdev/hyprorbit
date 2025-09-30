@@ -38,6 +38,7 @@ func newRootCommand() *cobra.Command {
 			jsonOut, _ := cmd.Flags().GetBool("json")
 			quiet, _ := cmd.Flags().GetBool("quiet")
 			flagNoColor, _ := cmd.Flags().GetBool("no-color")
+			configPath, _ := cmd.Flags().GetString("config")
 			envNoColor := strings.TrimSpace(os.Getenv("NO_COLOR")) != ""
 			noColor := flagNoColor || envNoColor
 			colorEnabled = !noColor
@@ -47,6 +48,7 @@ func newRootCommand() *cobra.Command {
 				JSON:       jsonOut,
 				Quiet:      quiet,
 				NoColor:    noColor,
+				ConfigPath: configPath,
 			})
 
 			cmd.SetContext(ctl.WithClient(ctx, client))
@@ -58,6 +60,7 @@ func newRootCommand() *cobra.Command {
 	root.PersistentFlags().Bool("json", false, "Emit JSON responses")
 	root.PersistentFlags().Bool("quiet", false, "Suppress output on success")
 	root.PersistentFlags().Bool("no-color", false, "Disable ANSI colors in output")
+	root.PersistentFlags().String("config", "", "Override config file path")
 
 	root.AddCommand(newOrbitCommand())
 	root.AddCommand(newModuleCommand())

@@ -16,6 +16,8 @@ type StatusSnapshot struct {
 	Module    string        `json:"module,omitempty"`
 	Orbit     *orbit.Record `json:"orbit,omitempty"`
 	Generated time.Time     `json:"generated"`
+	Windows   int           `json:"windows,omitempty"`
+	Monitor   string        `json:"monitor,omitempty"`
 }
 
 type statusSubscriber struct {

@@ -43,3 +43,16 @@ modules:
       - match: "class:^TelegramDesktop$"
         cmd: ["telegram-desktop"]
 
+# Waybar module-watch formatting options
+waybar:
+  module_watch:
+    text: ["module", "workspace"]
+    tooltip: ["orbit_label"]
+    alt: ["orbit"]
+    class:
+      sources: ["module", "orbit"]
+      # Example rule: add a custom class when the "code" module is active
+      rules:
+        - field: "module"
+          equals: "code"
+          value: ["focused-code"]

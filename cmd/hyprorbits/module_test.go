@@ -1,14 +1,21 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 
 	"hyprorbits/internal/app/service"
+	"hyprorbits/internal/config"
 	"hyprorbits/internal/orbit"
 )
 
-func TestMarshalWaybarSnapshot(t *testing.T) {
+func TestModuleWatchFormatterGeneralDefaults(t *testing.T) {
+	formatter, err := newModuleWatchFormatter(context.Background(), moduleWatchFormatterOptions{})
+	if err != nil {
+		t.Fatalf("formatter: %v", err)
+	}
+
 	snapshot := service.StatusSnapshot{
 		Workspace: "dev-alpha",
 		Module:    "dev",
@@ -19,9 +26,9 @@ func TestMarshalWaybarSnapshot(t *testing.T) {
 		},
 	}
 
-	data, err := marshalWaybarSnapshot(snapshot)
+	data, err := formatter.Format(snapshot)
 	if err != nil {
-		t.Fatalf("marshalWaybarSnapshot returned error: %v", err)
+		t.Fatalf("format: %v", err)
 	}
 
 	var payload map[string]any
@@ -29,32 +36,60 @@ func TestMarshalWaybarSnapshot(t *testing.T) {
 		t.Fatalf("unmarshal payload: %v", err)
 	}
 
-	if payload["text"] != "dev" {
-		t.Fatalf("expected text 'dev', got %v", payload["text"])
+	if got := payload["text"]; got != "dev" {
+		t.Fatalf("expected text 'dev', got %v", got)
 	}
-	if payload["workspace"] != "dev-alpha" {
-		t.Fatalf("expected workspace 'dev-alpha', got %v", payload["workspace"])
+	if got := payload["workspace"]; got != "dev-alpha" {
+		t.Fatalf("expected workspace 'dev-alpha', got %v", got)
 	}
-	if payload["orbit"] != "alpha" {
-		t.Fatalf("expected orbit 'alpha', got %v", payload["orbit"])
+	if got := payload["orbit"]; got != "alpha" {
+		t.Fatalf("expected orbit 'alpha', got %v", got)
 	}
-	if payload["color"] != "#ff0000" {
-		t.Fatalf("expected color '#ff0000', got %v", payload["color"])
+	if got := payload["color"]; got != "#ff0000" {
+		t.Fatalf("expected color '#ff0000', got %v", got)
 	}
-	if payload["class"] != "dev alpha" {
-		t.Fatalf("expected class 'dev alpha', got %v", payload["class"])
+	if got := payload["class"]; got != "dev alpha" {
+		t.Fatalf("expected class 'dev alpha', got %v", got)
 	}
-	if payload["tooltip"] != "Alpha Orbit" {
-		t.Fatalf("expected tooltip 'Alpha Orbit', got %v", payload["tooltip"])
+	if got := payload["tooltip"]; got != "Alpha Orbit" {
+		t.Fatalf("expected tooltip 'Alpha Orbit', got %v", got)
 	}
 }
 
-func TestMarshalWaybarSnapshotFallbacks(t *testing.T) {
-	snapshot := service.StatusSnapshot{Workspace: "orphan"}
-
-	data, err := marshalWaybarSnapshot(snapshot)
+func TestModuleWatchFormatterWaybarDefaults(t *testing.T) {
+	raw := &config.Config{
+		Orbits: []config.Orbit{{Name: "alpha", Label: "Alpha Orbit"}},
+		Modules: map[string]config.Module{
+			"dev": {Focus: config.ModuleFocus{}},
+		},
+	}
+	effective, err := config.BuildEffective("<test>", raw)
 	if err != nil {
-		t.Fatalf("marshalWaybarSnapshot returned error: %v", err)
+		t.Fatalf("build effective: %v", err)
+	}
+
+	formatter, err := newModuleWatchFormatter(context.Background(), moduleWatchFormatterOptions{
+		Waybar: true,
+		Config: effective,
+	})
+	if err != nil {
+		t.Fatalf("formatter: %v", err)
+	}
+
+	snapshot := service.StatusSnapshot{
+		Workspace: "dev-alpha",
+		Module:    "dev",
+		Orbit: &orbit.Record{
+			Name:  "alpha",
+			Label: "Alpha Orbit",
+			Color: "#ff0000",
+		},
+		Windows: 3,
+	}
+
+	data, err := formatter.Format(snapshot)
+	if err != nil {
+		t.Fatalf("format: %v", err)
 	}
 
 	var payload map[string]any
@@ -62,13 +97,77 @@ func TestMarshalWaybarSnapshotFallbacks(t *testing.T) {
 		t.Fatalf("unmarshal payload: %v", err)
 	}
 
-	if payload["text"] != "orphan" {
-		t.Fatalf("expected fallback text 'orphan', got %v", payload["text"])
+	if got := payload["text"]; got != "dev" {
+		t.Fatalf("expected text 'dev', got %v", got)
 	}
-	if payload["tooltip"] != "orphan" {
-		t.Fatalf("expected tooltip 'orphan', got %v", payload["tooltip"])
+	if got := payload["alt"]; got != "dev-alpha" {
+		t.Fatalf("expected alt 'dev-alpha', got %v", got)
 	}
-	if _, ok := payload["orbit"]; ok {
-		t.Fatalf("did not expect orbit field, got %v", payload["orbit"])
+	if got := payload["tooltip"]; got != "Alpha Orbit" {
+		t.Fatalf("expected tooltip 'Alpha Orbit', got %v", got)
+	}
+
+	classRaw, ok := payload["class"].([]any)
+	if !ok {
+		t.Fatalf("expected class to be []any, got %T", payload["class"])
+	}
+	if len(classRaw) != 2 {
+		t.Fatalf("expected 2 classes, got %d", len(classRaw))
+	}
+	if classRaw[0] != "dev" || classRaw[1] != "alpha" {
+		t.Fatalf("unexpected class entries: %v", classRaw)
+	}
+
+	if _, ok := payload["percentage"]; ok {
+		t.Fatalf("did not expect percentage field by default")
+	}
+}
+
+func TestModuleWatchFormatterWaybarCustomAlt(t *testing.T) {
+	raw := &config.Config{
+		Orbits: []config.Orbit{{Name: "alpha", Label: "Alpha Orbit"}},
+		Modules: map[string]config.Module{
+			"dev": {Focus: config.ModuleFocus{}},
+		},
+		Waybar: config.WaybarConfig{
+			ModuleWatch: config.WaybarModuleWatchConfig{
+				Alt: config.StringList{"orbit_label", "workspace"},
+			},
+		},
+	}
+	effective, err := config.BuildEffective("<custom>", raw)
+	if err != nil {
+		t.Fatalf("build effective: %v", err)
+	}
+
+	formatter, err := newModuleWatchFormatter(context.Background(), moduleWatchFormatterOptions{
+		Waybar: true,
+		Config: effective,
+	})
+	if err != nil {
+		t.Fatalf("formatter: %v", err)
+	}
+
+	snapshot := service.StatusSnapshot{
+		Workspace: "dev-alpha",
+		Module:    "dev",
+		Orbit: &orbit.Record{
+			Name:  "alpha",
+			Label: "Alpha Orbit",
+		},
+	}
+
+	data, err := formatter.Format(snapshot)
+	if err != nil {
+		t.Fatalf("format: %v", err)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(data, &payload); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+
+	if got := payload["alt"]; got != "Alpha Orbit" {
+		t.Fatalf("expected alt 'Alpha Orbit', got %v", got)
 	}
 }

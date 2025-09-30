@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -133,7 +132,9 @@ func newModuleSeedCommand() *cobra.Command {
 }
 
 func newModuleWatchCommand() *cobra.Command {
-	return &cobra.Command{
+	var flagWaybar bool
+
+	cmd := &cobra.Command{
 		Use:   "watch",
 		Short: "Stream module status updates",
 		Args:  cobra.NoArgs,
@@ -154,6 +155,17 @@ func newModuleWatchCommand() *cobra.Command {
 			scanner.Buffer(make([]byte, 0, 4096), 256*1024)
 			writer := cmd.OutOrStdout()
 
+			var formatter *moduleWatchFormatter
+			if !opts.JSON && !opts.Quiet {
+				formatter, err = newModuleWatchFormatter(cmd.Context(), moduleWatchFormatterOptions{
+					Waybar:     flagWaybar,
+					ConfigPath: opts.ConfigPath,
+				})
+				if err != nil {
+					return err
+				}
+			}
+
 			for scanner.Scan() {
 				if opts.Quiet {
 					continue
@@ -172,7 +184,11 @@ func newModuleWatchCommand() *cobra.Command {
 					return fmt.Errorf("module watch: decode snapshot: %w", err)
 				}
 
-				payload, err := marshalWaybarSnapshot(snapshot)
+				if formatter == nil {
+					continue
+				}
+
+				payload, err := formatter.Format(snapshot)
 				if err != nil {
 					return err
 				}
@@ -188,6 +204,10 @@ func newModuleWatchCommand() *cobra.Command {
 			return nil
 		},
 	}
+
+	cmd.Flags().BoolVar(&flagWaybar, "waybar", false, "Emit Waybar-compatible JSON envelope")
+
+	return cmd
 }
 
 func newModuleListCommand() *cobra.Command {
@@ -238,56 +258,4 @@ func newModuleListCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&flagAll, "all", false, "Show all workspaces (default)")
 
 	return cmd
-}
-
-func marshalWaybarSnapshot(snapshot service.StatusSnapshot) ([]byte, error) {
-	text := snapshot.Module
-	if text == "" {
-		text = snapshot.Workspace
-	}
-
-	payload := map[string]any{
-		"text":      text,
-		"workspace": snapshot.Workspace,
-		"module":    snapshot.Module,
-	}
-
-	tooltip := snapshot.Workspace
-	if tooltip == "" && snapshot.Orbit != nil && snapshot.Orbit.Name != "" {
-		tooltip = snapshot.Orbit.Name
-	}
-	if snapshot.Orbit != nil && snapshot.Orbit.Label != "" {
-		tooltip = snapshot.Orbit.Label
-	}
-	if tooltip != "" {
-		payload["tooltip"] = tooltip
-	}
-
-	if snapshot.Workspace != "" {
-		payload["alt"] = snapshot.Workspace
-	}
-
-	classes := make([]string, 0, 3)
-	if snapshot.Module != "" {
-		classes = append(classes, snapshot.Module)
-	}
-	if snapshot.Orbit != nil && snapshot.Orbit.Name != "" {
-		classes = append(classes, snapshot.Orbit.Name)
-		payload["orbit"] = snapshot.Orbit.Name
-	}
-	if len(classes) > 0 {
-		payload["class"] = strings.Join(classes, " ")
-	}
-
-	if snapshot.Orbit != nil {
-		payload["orbit_record"] = snapshot.Orbit
-		if snapshot.Orbit.Label != "" {
-			payload["orbit_label"] = snapshot.Orbit.Label
-		}
-		if snapshot.Orbit.Color != "" {
-			payload["color"] = snapshot.Orbit.Color
-		}
-	}
-
-	return json.Marshal(payload)
 }
