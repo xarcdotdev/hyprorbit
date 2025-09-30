@@ -18,7 +18,7 @@ const (
 
 	socketEnvVar      = "HYPR_ORBITS_SOCKET"
 	xdgRuntimeEnvVar  = "XDG_RUNTIME_DIR"
-	defaultSocketName = "hyprorbits.sock"
+	defaultSocketName = "hyprorbit.sock"
 )
 
 // DialOptions instructs DialContext how to create the IPC connection.
@@ -56,7 +56,7 @@ func DialContext(ctx context.Context, opts DialOptions) (net.Conn, error) {
 	return conn, nil
 }
 
-// DaemonOfflineError indicates the absence of a responsive hyprorbits daemon socket.
+// DaemonOfflineError indicates the absence of a responsive hyprorbit daemon socket.
 type DaemonOfflineError struct {
 	Path  string
 	Cause error
@@ -67,7 +67,7 @@ func (e *DaemonOfflineError) Error() string {
 	if e == nil {
 		return ""
 	}
-	return fmt.Sprintf("hyprorbits daemon is not running (expected socket at %s). Start it (e.g. `hyprorbitsd`).", e.Path)
+	return fmt.Sprintf("hyprorbit daemon is not running (expected socket at %s). Start it (e.g. `hyprorbitd`).", e.Path)
 }
 
 // Unwrap exposes the underlying dial failure (e.g. ENOENT, ECONNREFUSED).
@@ -114,5 +114,5 @@ func absolutize(path string) (string, error) {
 }
 
 func fallbackSocketPath() string {
-	return filepath.Join("/tmp", fmt.Sprintf("hyprorbits-%d.sock", os.Getuid()))
+	return filepath.Join("/tmp", fmt.Sprintf("hyprorbit-%d.sock", os.Getuid()))
 }

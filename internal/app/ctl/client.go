@@ -24,7 +24,7 @@ type Options struct {
 	ConfigPath string
 }
 
-// Client speaks the IPC protocol with the hyprorbits daemon.
+// Client speaks the IPC protocol with the hyprorbit daemon.
 type Client struct {
 	opts Options
 }

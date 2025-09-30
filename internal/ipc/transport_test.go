@@ -28,7 +28,7 @@ func TestDialContextDaemonOffline(t *testing.T) {
 		t.Fatalf("expected path %q, got %q", missingSocket, offlineErr.Path)
 	}
 
-	if msg := offlineErr.Error(); !strings.Contains(msg, "hyprorbits daemon is not running") || !strings.Contains(msg, missingSocket) {
+	if msg := offlineErr.Error(); !strings.Contains(msg, "hyprorbit daemon is not running") || !strings.Contains(msg, missingSocket) {
 		t.Fatalf("error message missing context: %q", msg)
 	}
 

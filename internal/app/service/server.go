@@ -14,7 +14,7 @@ import (
 	"hyprorbit/internal/ipc"
 )
 
-// Server hosts the hyprorbits daemon lifecycle.
+// Server hosts the hyprorbit daemon lifecycle.
 type Server struct {
 	opts       Options
 	state      *DaemonState

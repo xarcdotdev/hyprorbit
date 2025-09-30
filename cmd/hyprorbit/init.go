@@ -29,7 +29,7 @@ const (
 func newInitCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "init",
-		Short: "Initialize hyprorbits configuration and workspace state",
+		Short: "Initialize hyprorbit configuration and workspace state",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client, err := ctl.FromContext(cmd.Context())
 			if err != nil {
@@ -41,14 +41,14 @@ func newInitCommand() *cobra.Command {
 			}
 
 			out := cmd.OutOrStdout()
-			fmt.Fprintf(out, "\n%s✦ hyprorbits initialization ✦%s\n\n", color(ansiPrimary), color(ansiReset))
+			fmt.Fprintf(out, "\n%s✦ hyprorbit initialization ✦%s\n\n", color(ansiPrimary), color(ansiReset))
 
 			if err := promptConfigGeneration(cmd.Context(), out); err != nil {
 				return err
 			}
 
 			fmt.Fprintf(out, "%sTip:%s Explore Waybar + keybinding examples at: \n", color(ansiAccent), color(ansiReset))
-			fmt.Fprintf(out, "%shttps://github.com/xarcdotdev/hyprorbits/examples%s\n\n", color(ansiAccent), color(ansiReset))
+			fmt.Fprintf(out, "%shttps://github.com/xarcdotdev/hyprorbit/examples%s\n\n", color(ansiAccent), color(ansiReset))
 
 			ok, err := promptYesNo(out, "Reset Hyprland workspaces to match your first orbit/module?", false)
 			if err != nil {
@@ -59,7 +59,7 @@ func newInitCommand() *cobra.Command {
 					return err
 				}
 			} else {
-				fmt.Fprintf(out, "%sSkipping workspace reset – you can run `hyprorbits init` again later.%s\n", color(ansiWarning), color(ansiReset))
+				fmt.Fprintf(out, "%sSkipping workspace reset – you can run `hyprorbit init` again later.%s\n", color(ansiWarning), color(ansiReset))
 			}
 
 			fmt.Fprintf(out, "\n%sAll systems aligned. Welcome to your orbit.%s\n", color(ansiSuccess), color(ansiReset))
@@ -78,7 +78,7 @@ func promptConfigGeneration(ctx context.Context, out interface{ Write([]byte) (i
 	if strings.TrimSpace(homeDir) == "" {
 		return fmt.Errorf("init: resolve home directory: empty result")
 	}
-	defaultPath := filepath.Join(homeDir, ".config", "hyprorbits", "config.yaml")
+	defaultPath := filepath.Join(homeDir, ".config", "hyprorbit", "config.yaml")
 	exists := fileExists(defaultPath)
 	var question string
 	if exists {
@@ -128,7 +128,7 @@ func ensureDaemonRunning(ctx context.Context, client *ctl.Client) error {
 	}
 	if err := client.DaemonStatus(ctx); err != nil {
 		if isConnectionError(err) {
-			return fmt.Errorf("hyprorbits daemon is not running. Start it (e.g. `hyprorbitsd`) and rerun this command")
+			return fmt.Errorf("hyprorbit daemon is not running. Start it (e.g. `hyprorbitd`) and rerun this command")
 		}
 		return err
 	}

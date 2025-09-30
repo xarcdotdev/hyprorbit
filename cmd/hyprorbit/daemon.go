@@ -12,7 +12,7 @@ import (
 func newDaemonCommand() *cobra.Command {
 	daemonCmd := &cobra.Command{
 		Use:   "daemon",
-		Short: "Control the hyprorbits daemon",
+		Short: "Control the hyprorbit daemon",
 	}
 
 	daemonCmd.AddCommand(newDaemonReloadCommand())

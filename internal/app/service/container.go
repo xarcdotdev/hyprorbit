@@ -18,7 +18,7 @@ import (
 
 const snapshotQueryTimeout = 1200 * time.Millisecond
 
-// DaemonState aggregates long-lived daemon dependencies for hyprorbitsd.
+// DaemonState aggregates long-lived daemon dependencies for hyprorbitd.
 type DaemonState struct {
 	opts       Options
 	loaderOpts config.LoaderOptions

@@ -196,5 +196,5 @@ func resolvePath(override string) (string, error) {
 		base = filepath.Join(home, ".local", "state")
 	}
 
-	return filepath.Join(base, "hyprorbits", "orbit"), nil
+	return filepath.Join(base, "hyprorbit", "orbit"), nil
 }
