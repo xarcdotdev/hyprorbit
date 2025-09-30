@@ -2,7 +2,7 @@
 
 <!-- PROJECT LOGO -->
 <div align="center">
-    <img src="docs/images/logo.png" alt="Logo" width="250" height="250">
+    <img src="docs/images/logo.webp" alt="Logo" width="150" height="150">
     <!-- <h1>**Ø**</h1> -->
 
 <h2 align="center">hyprørbit</h2>
