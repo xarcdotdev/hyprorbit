@@ -132,7 +132,10 @@ func newModuleSeedCommand() *cobra.Command {
 }
 
 func newModuleWatchCommand() *cobra.Command {
-	var flagWaybar bool
+	var (
+		flagWaybar       bool
+		flagWaybarConfig string
+	)
 
 	cmd := &cobra.Command{
 		Use:   "watch",
@@ -158,8 +161,9 @@ func newModuleWatchCommand() *cobra.Command {
 			var formatter *moduleWatchFormatter
 			if !opts.JSON && !opts.Quiet {
 				formatter, err = newModuleWatchFormatter(cmd.Context(), moduleWatchFormatterOptions{
-					Waybar:     flagWaybar,
-					ConfigPath: opts.ConfigPath,
+					Waybar:           flagWaybar,
+					ConfigPath:       opts.ConfigPath,
+					WaybarConfigPath: flagWaybarConfig,
 				})
 				if err != nil {
 					return err
@@ -206,6 +210,7 @@ func newModuleWatchCommand() *cobra.Command {
 	}
 
 	cmd.Flags().BoolVar(&flagWaybar, "waybar", false, "Emit Waybar-compatible JSON envelope")
+	cmd.Flags().StringVar(&flagWaybarConfig, "waybar-config", "", "Override Waybar config file path")
 
 	return cmd
 }

@@ -11,9 +11,10 @@ import (
 )
 
 type moduleWatchFormatterOptions struct {
-	Waybar     bool
-	ConfigPath string
-	Config     *config.EffectiveConfig
+	Waybar           bool
+	ConfigPath       string
+	WaybarConfigPath string
+	Config           *config.EffectiveConfig
 }
 
 type moduleWatchFormatter struct {
@@ -40,7 +41,10 @@ func newModuleWatchFormatter(ctx context.Context, opts moduleWatchFormatterOptio
 	if opts.Config != nil {
 		cfg = opts.Config
 	} else {
-		loader := config.NewLoader(config.LoaderOptions{OverridePath: opts.ConfigPath})
+		loader := config.NewLoader(config.LoaderOptions{
+			OverridePath:       opts.ConfigPath,
+			WaybarOverridePath: opts.WaybarConfigPath,
+		})
 		cfg, err = loader.Load(ctx)
 		if err != nil {
 			return nil, err

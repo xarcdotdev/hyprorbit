@@ -17,13 +17,14 @@ import (
 )
 
 const (
-	ansiPrimary   = "\033[38;5;207m"
-	ansiAccent    = "\033[38;5;81m"
-	ansiSuccess   = "\033[32m"
-	ansiWarning   = "\033[33m"
-	ansiPrompt    = "\033[36m"
-	ansiReset     = "\033[0m"
-	spinnerFrames = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+	ansiPrimary          = "\033[38;5;207m"
+	ansiAccent           = "\033[38;5;81m"
+	ansiSuccess          = "\033[32m"
+	ansiWarning          = "\033[33m"
+	ansiPrompt           = "\033[36m"
+	ansiReset            = "\033[0m"
+	spinnerFrames        = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+	waybarConfigFileName = "waybar.yaml"
 )
 
 func newInitCommand() *cobra.Command {
@@ -78,13 +79,27 @@ func promptConfigGeneration(ctx context.Context, out interface{ Write([]byte) (i
 	if strings.TrimSpace(homeDir) == "" {
 		return fmt.Errorf("init: resolve home directory: empty result")
 	}
-	defaultPath := filepath.Join(homeDir, ".config", "hyprorbit", "config.yaml")
-	exists := fileExists(defaultPath)
+	configDir := filepath.Join(homeDir, ".config", "hyprorbit")
+	configPath := filepath.Join(configDir, "config.yaml")
+	if err := ensureDefaultConfigFile(out, configPath); err != nil {
+		return err
+	}
+
+	waybarPath := filepath.Join(configDir, waybarConfigFileName)
+	if err := ensureWaybarConfigFile(out, waybarPath); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func ensureDefaultConfigFile(out interface{ Write([]byte) (int, error) }, path string) error {
+	exists := fileExists(path)
 	var question string
 	if exists {
-		question = fmt.Sprintf("Regenerate default config at %s", defaultPath)
+		question = fmt.Sprintf("Regenerate default config at %s", path)
 	} else {
-		question = fmt.Sprintf("Create default config at %s", defaultPath)
+		question = fmt.Sprintf("Create default config at %s", path)
 	}
 	create, err := promptYesNo(out, question, !exists)
 	if err != nil {
@@ -94,13 +109,39 @@ func promptConfigGeneration(ctx context.Context, out interface{ Write([]byte) (i
 		fmt.Fprintf(out, "%sKeeping existing configuration.%s\n\n", color(ansiWarning), color(ansiReset))
 		return nil
 	}
-	if err := os.MkdirAll(filepath.Dir(defaultPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("init: create config directory: %w", err)
 	}
-	if err := os.WriteFile(defaultPath, []byte(defaultConfigYAML), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(defaultConfigYAML), 0o644); err != nil {
 		return fmt.Errorf("init: write config: %w", err)
 	}
-	fmt.Fprintf(out, "%s✓%s Wrote starter config to %s\n\n", color(ansiSuccess), color(ansiReset), defaultPath)
+	fmt.Fprintf(out, "%s✓%s Wrote starter config to %s\n\n", color(ansiSuccess), color(ansiReset), path)
+	return nil
+}
+
+func ensureWaybarConfigFile(out interface{ Write([]byte) (int, error) }, path string) error {
+	exists := fileExists(path)
+	var question string
+	if exists {
+		question = fmt.Sprintf("Regenerate Waybar module config at %s", path)
+	} else {
+		question = fmt.Sprintf("Create Waybar module config at %s", path)
+	}
+	create, err := promptYesNo(out, question, !exists)
+	if err != nil {
+		return err
+	}
+	if !create {
+		fmt.Fprintf(out, "%sKeeping existing Waybar configuration.%s\n\n", color(ansiWarning), color(ansiReset))
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("init: create Waybar config directory: %w", err)
+	}
+	if err := os.WriteFile(path, []byte(defaultWaybarConfigYAML), 0o644); err != nil {
+		return fmt.Errorf("init: write Waybar config: %w", err)
+	}
+	fmt.Fprintf(out, "%s✓%s Wrote Waybar module config to %s\n\n", color(ansiSuccess), color(ansiReset), path)
 	return nil
 }
 
@@ -263,12 +304,12 @@ modules:
 defaults:
   float: false
   move: true
+`
 
-waybar:
-  module_watch:
-    text: ["module", "workspace"]
-    tooltip: ["orbit_label", "workspace"]
-    alt: ["workspace"]
-    class:
-      sources: ["module", "orbit"]
+const defaultWaybarConfigYAML = `module_watch:
+  text: ["module", "workspace"]
+  tooltip: ["orbit_label", "workspace"]
+  alt: ["workspace"]
+  class:
+    sources: ["module", "orbit"]
 `
