@@ -170,6 +170,38 @@ func PrintWorkspaceSummaries(w io.Writer, opts Options, summaries []module.Works
 	return nil
 }
 
+// PrintWindowMove renders the result of a window move operation.
+func PrintWindowMove(w io.Writer, opts Options, result *WindowMoveResult) error {
+	if opts.Quiet {
+		return nil
+	}
+	if opts.JSON {
+		return encodeJSON(w, result)
+	}
+	if result == nil {
+		return fmt.Errorf("window: nothing to print")
+	}
+	parts := []string{dashIfEmpty(result.Window), dashIfEmpty(result.Workspace)}
+	if result.Module != "" {
+		parts = append(parts, result.Module)
+	}
+	if result.Orbit != "" {
+		parts = append(parts, result.Orbit)
+	}
+	annotations := make([]string, 0, 2)
+	if result.Created {
+		annotations = append(annotations, "created")
+	}
+	if result.Focused {
+		annotations = append(annotations, "focused")
+	}
+	if len(annotations) > 0 {
+		parts = append(parts, "["+strings.Join(annotations, ", ")+"]")
+	}
+	_, err := fmt.Fprintln(w, strings.Join(parts, "\t"))
+	return err
+}
+
 // PrintOrbitSummaries emits orbit information with runtime status details.
 func PrintOrbitSummaries(w io.Writer, opts Options, summaries []orbit.Summary) error {
 	if opts.Quiet {

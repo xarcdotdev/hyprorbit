@@ -141,6 +141,7 @@ See `hyprorbit --help` for full options.
 | `hyprorbit orbit next/prev` | Cycle through configured orbits             |
 | `hyprorbit module focus <name>` | Smart focus-or-launch for module        |
 | `hyprorbit module jump <name>` | Simple workspace switching               |
+| `hyprorbit window move <window> <target>` | Move/focus windows across modules |
 
 ### Orbit Commands
 
@@ -182,6 +183,30 @@ hyprorbit module focus code --no-move
 # Simple workspace switch (no window management)
 hyprorbit module jump code
 ```
+
+
+### Window Commands
+
+**Move current window to another module:**
+```sh
+# Move focused window to next module workspace and focus it
+hyprorbit window move current module:next
+
+# Move silently (do not change focus)
+hyprorbit window move current module:comm --silent
+
+# Create a temporary workspace in the active orbit and move window there
+hyprorbit window move current module:create
+```
+
+**Supported module targets:**
+- `module:<name>` – explicit module name (e.g., `module:code`)
+- `module:next` / `module:prev` – cycle through configured modules
+- `module:index:<n>` – zero-free index (1-based) into the module list
+- `module:regex:<pattern>` – first module matching the given regex
+- `module:create` – spawn a temporary workspace (`<n>-<orbit>`) before moving
+
+By default moves focus to the destination workspace; pass `--silent` to keep focus on the current workspace after the move.
 
 
 ### Output Formats

@@ -64,6 +64,7 @@ func newRootCommand() *cobra.Command {
 
 	root.AddCommand(newOrbitCommand())
 	root.AddCommand(newModuleCommand())
+	root.AddCommand(newWindowCommand())
 	root.AddCommand(newDaemonCommand())
 	root.AddCommand(newInitCommand())
 

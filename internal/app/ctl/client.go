@@ -36,6 +36,16 @@ type streamReadCloser struct {
 
 var dialIPC = ipc.DialContext
 
+// WindowMoveResult captures the outcome of moving a window.
+type WindowMoveResult struct {
+	Window    string `json:"window"`
+	Workspace string `json:"workspace"`
+	Module    string `json:"module,omitempty"`
+	Orbit     string `json:"orbit,omitempty"`
+	Created   bool   `json:"created,omitempty"`
+	Focused   bool   `json:"focused"`
+}
+
 func (s *streamReadCloser) Close() error {
 	var err error
 	s.once.Do(func() {
@@ -144,6 +154,18 @@ func (c *Client) OrbitList(ctx context.Context) ([]orbit.Summary, error) {
 		return nil, err
 	}
 	return summaries, nil
+}
+
+// WindowMove relocates a window to the requested target.
+func (c *Client) WindowMove(ctx context.Context, windowRef, targetRef string, silent bool) (*WindowMoveResult, error) {
+	req := ipc.NewRequest("window", "move")
+	req.Args = []string{windowRef, targetRef}
+	req.Flags = map[string]any{"silent": silent}
+	var res WindowMoveResult
+	if _, err := c.Call(ctx, req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
 }
 
 // ModuleFocusOptions customises the module focus request.

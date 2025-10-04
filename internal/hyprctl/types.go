@@ -1,8 +1,10 @@
 package hyprctl
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -61,7 +63,7 @@ type Window struct {
 	At             [2]int    `json:"at"`
 	Size           [2]int    `json:"size"`
 	Workspace      Workspace `json:"workspace"`
-	Floating       bool      `json:"floating"`
+	Floating       HyprBool  `json:"floating"`
 	Monitor        int       `json:"monitor"`
 	Class          string    `json:"class"`
 	Title          string    `json:"title"`
@@ -69,11 +71,76 @@ type Window struct {
 	InitialTitle   string    `json:"initialTitle"`
 	Pid            int       `json:"pid"`
 	Xwayland       bool      `json:"xwayland"`
-	Pinned         bool      `json:"pinned"`
-	Fullscreen     bool      `json:"fullscreen"`
-	FakeFullscreen bool      `json:"fakeFullscreen"`
+	Pinned         HyprBool  `json:"pinned"`
+	Fullscreen     HyprBool  `json:"fullscreen"`
+	FakeFullscreen HyprBool  `json:"fakeFullscreen"`
 	Grouped        []string  `json:"grouped"`
 	Swallowing     string    `json:"swallowing"`
+}
+
+// HyprBool accepts boolean values encoded as booleans, numbers, or strings.
+type HyprBool bool
+
+// UnmarshalJSON normalizes HyprBool inputs from Hyprland responses.
+func (b *HyprBool) UnmarshalJSON(data []byte) error {
+	data = bytes.TrimSpace(data)
+	if len(data) == 0 {
+		*b = HyprBool(false)
+		return nil
+	}
+	switch data[0] {
+	case 't', 'T', 'f', 'F':
+		var value bool
+		if err := json.Unmarshal(data, &value); err != nil {
+			return err
+		}
+		*b = HyprBool(value)
+		return nil
+	case '"':
+		var text string
+		if err := json.Unmarshal(data, &text); err != nil {
+			return err
+		}
+		text = strings.TrimSpace(text)
+		if text == "" {
+			*b = HyprBool(false)
+			return nil
+		}
+		if s, err := strconv.Atoi(text); err == nil {
+			*b = HyprBool(s != 0)
+			return nil
+		}
+		lower := strings.ToLower(text)
+		if lower == "true" {
+			*b = HyprBool(true)
+			return nil
+		}
+		if lower == "false" {
+			*b = HyprBool(false)
+			return nil
+		}
+		if lower == "1" {
+			*b = HyprBool(true)
+			return nil
+		}
+		if lower == "0" {
+			*b = HyprBool(false)
+			return nil
+		}
+		return fmt.Errorf("hyprbool: unsupported string value %q", text)
+	default:
+		var num int
+		if err := json.Unmarshal(data, &num); err == nil {
+			*b = HyprBool(num != 0)
+			return nil
+		}
+		var floatVal float64
+		if err := json.Unmarshal(data, &floatVal); err == nil {
+			*b = HyprBool(floatVal != 0)
+			return nil
+		}
+		return fmt.Errorf("hyprbool: unsupported value %s", string(data))
+	}
 }
 
 // WorkspaceName returns a stable workspace identifier for the client.
