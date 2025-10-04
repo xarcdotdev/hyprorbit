@@ -178,6 +178,14 @@ hyprorbit module focus code --cmd "code"
 hyprorbit module focus code --no-move
 ```
 
+Modules bundle the matching and launch behaviour in `config.yaml`, so `module focus` always takes a **module name** (e.g., `thunar`). Each definition provides the matcher and fallback command, which lets hyprorbit:
+1. Resolve the active orbit and target workspace (`<module>-<orbit>`)
+2. Focus a matching window already in that workspace
+3. Otherwise move a matching window from elsewhere in the orbit
+4. Otherwise spawn the configured command, guaranteeing a single window per module/orbit
+
+Flags like `--match`, `--cmd`, `--float`, and `--no-move` temporarily override the config when you need custom behaviour.
+
 **Jump to workspace:**
 ```sh
 # Simple workspace switch (no window management)
@@ -260,7 +268,6 @@ modules:
     focus:
       match: "class=.*Code"              # Window matcher
       cmd: ["ghostty", "-T", "Code"]       # Spawn command
-      workspace_type: "stack"            # Layout hint
   comm:
     focus:
       match: "title=.*Slack"

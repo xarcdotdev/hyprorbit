@@ -285,21 +285,68 @@ func (s *spinner) StopWithMessage(message string) {
 	fmt.Fprintf(s.out, "%s\n", message)
 }
 
-const defaultConfigYAML = `orbits:
+const defaultConfigYAML = `# hyprorbit default configuration
+orbits:
   - name: "alpha"
     label: "α"
+    color: "#BC83F9"
   - name: "beta"
     label: "β"
+    color: "#F97583"
+  - name: "gamma"
+    label: "γ"
+    color: "#85E89D"
+  - name: "delta"
+    label: "δ"
+    color: "#f55050ff"
+  - name: "epsilon"
+    label: "ε"
+    color: "#FFAB70"
+  - name: "zeta"
+    label: "ζ"
+    color: "#f5de2aff"
+  - name: "theta"
+    label: "η"
+    color: "#70bcffff"
+  - name: "iota"
+    label: "ι"
+    color: "#e7e7e7ff"
 
+# Module definitions with focus rules
 modules:
   code:
     focus:
-      match: "class=.*Code"
-      cmd: ["kitty", "-T", "Code"]
+      match: "class:^code$"
+      cmd: ["code"]
+    seed:
+      - match: "class:^code$"
+        cmd: ["code"]
+      - match: "class:^(ghostty|Alacritty|kitty)$"
+        cmd: ["ghostty"]
+  gfx:
+    focus:
+      match: "class:^(Firefox|zen)$"
+      cmd: ["zen-browser"]
+    seed:
+      - match: "class:^(Firefox|zen)$"
+        cmd: ["zen-browser"]
+      - match: "class:^Gimp$"
+        cmd: ["gimp"]
   comm:
     focus:
-      match: "title=.*Slack"
-      cmd: ["flatpak", "run", "com.slack.Slack"]
+      match: "class:^Thunderbird$"
+      cmd: ["thunderbird"]
+    seed:
+      - match: "class:^Thunderbird$"
+        cmd: ["thunderbird"]
+  media:
+    focus:
+      match: "class:^(mpv)$"
+      cmd: ["mpv"]
+  surf:
+    focus:
+      match: "class:^zen"
+      cmd: ["zen-browser"]
 
 defaults:
   float: false

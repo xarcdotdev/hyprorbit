@@ -1,4 +1,4 @@
-# Orbit definitions with names, labels, and colors
+# Orbit definitions with names and labels (colors have no effect by default waybar only takes name(text) and label(alt) )
 orbits:
   - name: "alpha"
     label: "α"
@@ -12,25 +12,37 @@ orbits:
   - name: "delta"
     label: "δ"
     color: "#FFAB70"
+  - name: "epsilon"
+    label: "ε"
+    color: "#FFAB70"
+  - name: "zeta"
+    label: "ζ"
+    color: "#FFAB70"
+  - name: "theta"
+    label: "η"
+    color: "#FFAB70"
+  - name: "iota"
+    label: "ι"
+    color: "#FFAB70"
 
 # Module definitions with focus rules
 modules:
   code:
     focus:
-      match: "class:^Code$"
+      match: "class:^code$"
       cmd: ["code"]
     seed:
-      - match: "class:^Code$"
+      - match: "class:^code$"
         cmd: ["code"]
-      - match: "class:^(Alacritty|kitty)$"
-        cmd: ["alacritty"]
+      - match: "class:^(ghostty|Alacritty|kitty)$"
+        cmd: ["ghostty"]
   gfx:
     focus:
-      match: "class:^(Firefox|Zen Browser)$"
-      cmd: ["firefox"]
+      match: "class:^(Firefox|zen)$"
+      cmd: ["zen-browser"]
     seed:
-      - match: "class:^(Firefox|Zen Browser)$"
-        cmd: ["firefox"]
+      - match: "class:^(Firefox|zen)$"
+        cmd: ["zen-browser"]
       - match: "class:^Gimp$"
         cmd: ["gimp"]
   comm:
@@ -40,5 +52,20 @@ modules:
     seed:
       - match: "class:^Thunderbird$"
         cmd: ["thunderbird"]
-      - match: "class:^TelegramDesktop$"
-        cmd: ["telegram-desktop"]
+      # - match: "class:^TelegramDesktop$"
+      #   cmd: ["telegram-desktop"]
+  media:
+    focus:
+      match: "class:^(mpv)$"
+      cmd: ["mpv"]
+  surf:
+    focus:
+      match: "class:^zen"
+      cmd: ["zen-browser"]
+
+defaults:
+  float: false
+  move: true
+
+orbit:
+  switch_preference: last-active-first
