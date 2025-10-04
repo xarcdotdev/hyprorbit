@@ -136,6 +136,16 @@ func (c *Client) OrbitSet(ctx context.Context, name string) (*orbit.Record, erro
 	return &rec, nil
 }
 
+// OrbitList lists configured orbits alongside runtime status details.
+func (c *Client) OrbitList(ctx context.Context) ([]orbit.Summary, error) {
+	req := ipc.NewRequest("orbit", "list")
+	var summaries []orbit.Summary
+	if _, err := c.Call(ctx, req, &summaries); err != nil {
+		return nil, err
+	}
+	return summaries, nil
+}
+
 // ModuleFocusOptions customises the module focus request.
 type ModuleFocusOptions struct {
 	Matcher    string

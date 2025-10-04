@@ -108,6 +108,19 @@ func (d *Dispatcher) handleOrbit(ctx context.Context, req ipc.Request) (ipc.Resp
 		return d.handleOrbitStep(ctx, svc, 1)
 	case "prev":
 		return d.handleOrbitStep(ctx, svc, -1)
+	case "list":
+		summaries, err := d.state.OrbitSummaries(ctx)
+		if err != nil {
+			resp.Error = err.Error()
+			resp.ExitCode = 1
+			return resp, nil
+		}
+		if err := assignData(&resp, summaries); err != nil {
+			resp.Error = err.Error()
+			resp.ExitCode = 1
+			return resp, nil
+		}
+		return resp, nil
 	case "set":
 		if len(req.Args) != 1 {
 			resp.Error = "orbit set requires exactly one argument"
@@ -301,6 +314,7 @@ func (d *Dispatcher) handleModule(ctx context.Context, req ipc.Request) (ipc.Res
 			resp.ExitCode = 1
 			return resp, nil, nil
 		}
+		d.recordModuleResult(result)
 		d.publishSnapshot()
 		return resp, nil, nil
 	case "jump":
@@ -315,6 +329,7 @@ func (d *Dispatcher) handleModule(ctx context.Context, req ipc.Request) (ipc.Res
 			resp.ExitCode = 1
 			return resp, nil, nil
 		}
+		d.recordModuleResult(result)
 		d.publishSnapshot()
 		return resp, nil, nil
 	case "seed":
@@ -416,6 +431,7 @@ func (d *Dispatcher) handleModuleStep(ctx context.Context, svc *module.Service, 
 		return resp, nil, nil
 	}
 
+	d.recordModuleResult(result)
 	d.publishSnapshot()
 	return resp, nil, nil
 }
@@ -694,8 +710,12 @@ func (d *Dispatcher) jumpToActiveModuleWorkspace(ctx context.Context) error {
 	if _, ok := modSvc.Module(moduleName); !ok {
 		return nil
 	}
-	_, err = modSvc.Jump(ctx, moduleName)
-	return err
+	res, err := modSvc.Jump(ctx, moduleName)
+	if err != nil {
+		return err
+	}
+	d.recordModuleResult(res)
+	return nil
 }
 
 func (d *Dispatcher) alignWorkspace(ctx context.Context) error {
@@ -730,10 +750,22 @@ func (d *Dispatcher) alignWorkspace(ctx context.Context) error {
 			return moveErr
 		}
 	}
-	if _, err := modSvc.Jump(ctx, names[0]); err != nil {
+	res, err := modSvc.Jump(ctx, names[0])
+	if err != nil {
 		return err
 	}
+	d.recordModuleResult(res)
 	return nil
+}
+
+func (d *Dispatcher) recordModuleResult(result *module.Result) {
+	if d == nil || d.state == nil || result == nil {
+		return
+	}
+	if result.Workspace == "" {
+		return
+	}
+	d.state.recordWorkspaceActivation(result.Workspace)
 }
 
 func (d *Dispatcher) ensureWorkspaceExists(ctx context.Context, hypr runtime.HyprctlClient, target, origin string) error {

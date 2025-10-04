@@ -143,7 +143,7 @@ func PrintWorkspaceSummaries(w io.Writer, opts Options, summaries []module.Works
 
 	// Render header.
 	reset := colorOrEmpty(opts, ansiReset)
-	if err := printTableRow(w, headers, widths, nil, reset); err != nil {
+	if err := printTableRow(w, headers, widths, nil, reset, true); err != nil {
 		return err
 	}
 
@@ -163,7 +163,62 @@ func PrintWorkspaceSummaries(w io.Writer, opts Options, summaries []module.Works
 		if row[4] != "-" {
 			colors[4] = colorOrEmpty(opts, ansiWhite)
 		}
-		if err := printTableRow(w, row, widths, colors, reset); err != nil {
+		if err := printTableRow(w, row, widths, colors, reset, true); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// PrintOrbitSummaries emits orbit information with runtime status details.
+func PrintOrbitSummaries(w io.Writer, opts Options, summaries []orbit.Summary) error {
+	if opts.Quiet {
+		return nil
+	}
+	if opts.JSON {
+		if summaries == nil {
+			summaries = []orbit.Summary{}
+		}
+		return encodeJSON(w, summaries)
+	}
+	headers := []string{"NAME", "STATUS", "ACTIVE_MODULE"}
+	rows := make([][]string, len(summaries))
+	widths := make([]int, len(headers))
+	for i, header := range headers {
+		widths[i] = runeLen(header)
+	}
+
+	for i, summary := range summaries {
+		status := dashIfEmpty(summary.Status)
+		activeModule := dashIfEmpty(summary.ActiveModule)
+		row := []string{summary.Name, status, activeModule}
+		rows[i] = row
+		for col, value := range row {
+			if l := runeLen(value); l > widths[col] {
+				widths[col] = l
+			}
+		}
+	}
+
+	reset := colorOrEmpty(opts, ansiReset)
+	if err := printTableRow(w, headers, widths, nil, reset, false); err != nil {
+		return err
+	}
+
+	for _, row := range rows {
+		colors := make([]string, len(row))
+		switch strings.ToLower(row[1]) {
+		case "active":
+			colors[1] = colorOrEmpty(opts, ansiGreen)
+		case "inactive":
+			colors[1] = colorOrEmpty(opts, ansiGrey)
+		default:
+			colors[1] = colorOrEmpty(opts, ansiYellow)
+		}
+		if row[2] != "-" {
+			colors[2] = colorOrEmpty(opts, ansiCyan)
+		}
+		if err := printTableRow(w, row, widths, colors, reset, false); err != nil {
 			return err
 		}
 	}
@@ -185,7 +240,7 @@ const (
 	ansiYellow = "\033[33m"
 )
 
-func printTableRow(w io.Writer, columns []string, widths []int, colors []string, reset string) error {
+func printTableRow(w io.Writer, columns []string, widths []int, colors []string, reset string, alignLastRight bool) error {
 	for i, text := range columns {
 		color := ""
 		if colors != nil {
@@ -193,11 +248,18 @@ func printTableRow(w io.Writer, columns []string, widths []int, colors []string,
 		}
 		var err error
 		if i == len(columns)-1 {
-			// last column right-aligned
-			if color != "" {
-				_, err = fmt.Fprintf(w, "%s%*s%s", color, widths[i], text, reset)
+			if alignLastRight {
+				if color != "" {
+					_, err = fmt.Fprintf(w, "%s%*s%s", color, widths[i], text, reset)
+				} else {
+					_, err = fmt.Fprintf(w, "%*s", widths[i], text)
+				}
 			} else {
-				_, err = fmt.Fprintf(w, "%*s", widths[i], text)
+				if color != "" {
+					_, err = fmt.Fprintf(w, "%s%-*s%s", color, widths[i], text, reset)
+				} else {
+					_, err = fmt.Fprintf(w, "%-*s", widths[i], text)
+				}
 			}
 		} else {
 			if color != "" {

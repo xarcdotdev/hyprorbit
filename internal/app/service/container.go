@@ -30,6 +30,9 @@ type DaemonState struct {
 	moduleSvc *module.Service
 	hyprctl   runtime.HyprctlClient
 
+	orbitActivityMu sync.RWMutex
+	orbitActivity   map[string]string
+
 	broadcaster *StatusBroadcaster
 
 	eventsSub    *events.Subscriber
@@ -79,15 +82,16 @@ func NewDaemonState(ctx context.Context, opts Options) (*DaemonState, error) {
 	}
 
 	return &DaemonState{
-		opts:        opts,
-		loaderOpts:  loaderOpts,
-		config:      cfg,
-		orbitMgr:    orbitMgr,
-		orbitSvc:    orbitSvc,
-		moduleSvc:   moduleSvc,
-		hyprctl:     hyprClient,
-		broadcaster: NewStatusBroadcaster(0),
-		logger:      func(string, ...any) {},
+		opts:          opts,
+		loaderOpts:    loaderOpts,
+		config:        cfg,
+		orbitMgr:      orbitMgr,
+		orbitSvc:      orbitSvc,
+		moduleSvc:     moduleSvc,
+		hyprctl:       hyprClient,
+		orbitActivity: make(map[string]string, len(cfg.Orbits)),
+		broadcaster:   NewStatusBroadcaster(0),
+		logger:        func(string, ...any) {},
 	}, nil
 }
 
@@ -231,6 +235,8 @@ func (s *DaemonState) Reload(ctx context.Context) error {
 		return err
 	}
 
+	s.refreshOrbitActivity(cfg.Orbits)
+
 	s.mu.Lock()
 	s.config = cfg
 	s.orbitMgr = orbitMgr
@@ -323,7 +329,97 @@ func (s *DaemonState) buildSnapshot(ctx context.Context) (*StatusSnapshot, error
 
 	snapshot.Module = status.Module
 	snapshot.Orbit = &status.Orbit
+	if snapshot.Orbit != nil {
+		s.recordActiveModule(snapshot.Module, snapshot.Orbit.Name)
+	}
 	return snapshot, nil
+}
+
+func (s *DaemonState) recordActiveModule(moduleName, orbitName string) {
+	moduleName = strings.TrimSpace(moduleName)
+	orbitName = strings.TrimSpace(orbitName)
+	if moduleName == "" || orbitName == "" {
+		return
+	}
+	s.orbitActivityMu.Lock()
+	if s.orbitActivity == nil {
+		s.orbitActivity = make(map[string]string)
+	}
+	s.orbitActivity[orbitName] = moduleName
+	s.orbitActivityMu.Unlock()
+}
+
+func (s *DaemonState) recordWorkspaceActivation(workspace string) {
+	workspace = strings.TrimSpace(workspace)
+	if workspace == "" {
+		return
+	}
+	moduleName, orbitName, err := module.ParseWorkspaceName(workspace)
+	if err != nil {
+		return
+	}
+	s.recordActiveModule(moduleName, orbitName)
+}
+
+func (s *DaemonState) orbitActivitySnapshot() map[string]string {
+	s.orbitActivityMu.RLock()
+	defer s.orbitActivityMu.RUnlock()
+	if len(s.orbitActivity) == 0 {
+		return map[string]string{}
+	}
+	snapshot := make(map[string]string, len(s.orbitActivity))
+	for name, moduleName := range s.orbitActivity {
+		snapshot[name] = moduleName
+	}
+	return snapshot
+}
+
+func (s *DaemonState) refreshOrbitActivity(orbits []config.OrbitRecord) {
+	s.orbitActivityMu.Lock()
+	defer s.orbitActivityMu.Unlock()
+	if len(orbits) == 0 {
+		s.orbitActivity = make(map[string]string)
+		return
+	}
+	current := s.orbitActivity
+	next := make(map[string]string, len(orbits))
+	for _, orbitRecord := range orbits {
+		if current != nil {
+			if moduleName := current[orbitRecord.Name]; moduleName != "" {
+				next[orbitRecord.Name] = moduleName
+			}
+		}
+	}
+	s.orbitActivity = next
+}
+
+func (s *DaemonState) OrbitSummaries(ctx context.Context) ([]orbit.Summary, error) {
+	svc := s.OrbitService()
+	if svc == nil {
+		return nil, fmt.Errorf("orbit service unavailable")
+	}
+	seq, err := svc.Sequence(ctx)
+	if err != nil {
+		return nil, err
+	}
+	current, err := svc.Current(ctx)
+	if err != nil {
+		return nil, err
+	}
+	activity := s.orbitActivitySnapshot()
+	summaries := make([]orbit.Summary, 0, len(seq))
+	for _, name := range seq {
+		status := "inactive"
+		if name == current {
+			status = "active"
+		}
+		summary := orbit.Summary{Name: name, Status: status}
+		if moduleName := activity[name]; moduleName != "" {
+			summary.ActiveModule = moduleName
+		}
+		summaries = append(summaries, summary)
+	}
+	return summaries, nil
 }
 
 func (s *DaemonState) consumeHyprEvents(ctx context.Context, sub *events.Subscriber) {

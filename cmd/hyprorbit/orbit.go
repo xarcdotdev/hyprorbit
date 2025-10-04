@@ -16,6 +16,7 @@ func newOrbitCommand() *cobra.Command {
 	orbitCmd.AddCommand(newOrbitNextCommand())
 	orbitCmd.AddCommand(newOrbitPrevCommand())
 	orbitCmd.AddCommand(newOrbitSetCommand())
+	orbitCmd.AddCommand(newOrbitListCommand())
 
 	return orbitCmd
 }
@@ -92,6 +93,25 @@ func newOrbitSetCommand() *cobra.Command {
 				return err
 			}
 			return ctl.PrintOrbit(cmd.OutOrStdout(), client.Options(), record)
+		},
+	}
+}
+
+func newOrbitListCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "list",
+		Short: "List configured orbits",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, err := ctl.FromContext(cmd.Context())
+			if err != nil {
+				return err
+			}
+			summaries, err := client.OrbitList(cmd.Context())
+			if err != nil {
+				return err
+			}
+			return ctl.PrintOrbitSummaries(cmd.OutOrStdout(), client.Options(), summaries)
 		},
 	}
 }
