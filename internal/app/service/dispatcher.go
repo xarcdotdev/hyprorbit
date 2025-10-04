@@ -126,6 +126,11 @@ func (d *Dispatcher) handleOrbit(ctx context.Context, req ipc.Request) (ipc.Resp
 			resp.ExitCode = 1
 			return resp, nil
 		}
+		if err := d.jumpToActiveModuleWorkspace(ctx); err != nil {
+			resp.Error = err.Error()
+			resp.ExitCode = 1
+			return resp, nil
+		}
 		d.state.InvalidateClients()
 		if err := assignData(&resp, record); err != nil {
 			resp.Error = err.Error()
@@ -177,6 +182,11 @@ func (d *Dispatcher) handleOrbitStep(ctx context.Context, svc *orbit.Service, de
 	}
 	name := seq[nextIdx]
 	if err := svc.Set(ctx, name); err != nil {
+		resp.Error = err.Error()
+		resp.ExitCode = 1
+		return resp, nil
+	}
+	if err := d.jumpToActiveModuleWorkspace(ctx); err != nil {
 		resp.Error = err.Error()
 		resp.ExitCode = 1
 		return resp, nil
@@ -493,6 +503,40 @@ func (d *Dispatcher) resetWorkspaces(ctx context.Context) error {
 	}
 	d.state.InvalidateClients()
 	return nil
+}
+
+func (d *Dispatcher) jumpToActiveModuleWorkspace(ctx context.Context) error {
+	modSvc := d.state.ModuleService()
+	if modSvc == nil {
+		return nil
+	}
+	hypr := d.state.HyprctlClient()
+	if hypr == nil {
+		return nil
+	}
+	ws, err := hypr.ActiveWorkspace(ctx)
+	if err != nil {
+		return err
+	}
+	if ws == nil {
+		return nil
+	}
+	name := strings.TrimSpace(ws.Name)
+	if name == "" {
+		return nil
+	}
+	moduleName, _, err := module.ParseWorkspaceName(name)
+	if err != nil {
+		return nil
+	}
+	if moduleName == "" {
+		return nil
+	}
+	if _, ok := modSvc.Module(moduleName); !ok {
+		return nil
+	}
+	_, err = modSvc.Jump(ctx, moduleName)
+	return err
 }
 
 func (d *Dispatcher) alignWorkspace(ctx context.Context) error {
