@@ -304,6 +304,9 @@ modules:
 defaults:
   float: false
   move: true
+
+orbit:
+  switch_preference: last-active-first
 `
 
 const defaultWaybarConfigYAML = `module_watch:

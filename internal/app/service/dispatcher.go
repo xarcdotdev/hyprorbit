@@ -689,32 +689,65 @@ func (d *Dispatcher) jumpToActiveModuleWorkspace(ctx context.Context) error {
 	if hypr == nil {
 		return nil
 	}
+	activeOrbit, err := modSvc.ActiveOrbit(ctx)
+	if err != nil {
+		return err
+	}
+	var orbitName string
+	if activeOrbit != nil {
+		orbitName = strings.TrimSpace(activeOrbit.Name)
+	}
+
 	ws, err := hypr.ActiveWorkspace(ctx)
 	if err != nil {
 		return err
 	}
-	if ws == nil {
+
+	var currentModule string
+	if ws != nil {
+		name := strings.TrimSpace(ws.Name)
+		if name != "" {
+			if moduleName, _, err := module.ParseWorkspaceName(name); err == nil {
+				currentModule = moduleName
+			}
+		}
+	}
+
+	var lastActive string
+	if orbitName != "" {
+		lastActive = strings.TrimSpace(d.state.LastActiveModule(orbitName))
+	}
+
+	preferLastActive := d.state.PreferLastActiveFirst()
+
+	candidates := make([]string, 0, 2)
+	if preferLastActive {
+		candidates = append(candidates, lastActive, currentModule)
+	} else {
+		candidates = append(candidates, currentModule, lastActive)
+	}
+
+	seen := make(map[string]struct{}, len(candidates))
+	for _, candidate := range candidates {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "" {
+			continue
+		}
+		if _, ok := seen[candidate]; ok {
+			continue
+		}
+		seen[candidate] = struct{}{}
+		if _, ok := modSvc.Module(candidate); !ok {
+			continue
+		}
+		res, err := modSvc.Jump(ctx, candidate)
+		if err != nil {
+			return err
+		}
+		d.recordModuleResult(res)
 		return nil
 	}
-	name := strings.TrimSpace(ws.Name)
-	if name == "" {
-		return nil
-	}
-	moduleName, _, err := module.ParseWorkspaceName(name)
-	if err != nil {
-		return nil
-	}
-	if moduleName == "" {
-		return nil
-	}
-	if _, ok := modSvc.Module(moduleName); !ok {
-		return nil
-	}
-	res, err := modSvc.Jump(ctx, moduleName)
-	if err != nil {
-		return err
-	}
-	d.recordModuleResult(res)
+
 	return nil
 }
 

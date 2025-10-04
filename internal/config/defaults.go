@@ -38,5 +38,8 @@ func DefaultConfig() *Config {
 			Float: &float,
 			Move:  &move,
 		},
+		Orbit: OrbitConfig{
+			SwitchPreference: string(OrbitSwitchPreferenceLastActiveFirst),
+		},
 	}
 }

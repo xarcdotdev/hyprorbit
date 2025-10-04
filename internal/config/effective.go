@@ -12,6 +12,7 @@ type EffectiveConfig struct {
 	Orbits   []OrbitRecord
 	Modules  map[string]ModuleRecord
 	Defaults ModuleSettings
+	Orbit    OrbitSettings
 	Source   string
 	Warnings []string
 	Waybar   WaybarSettings
@@ -49,6 +50,11 @@ type SeedSpec struct {
 type ModuleSettings struct {
 	Float bool
 	Move  bool
+}
+
+// OrbitSettings contains resolved orbit behaviour toggles.
+type OrbitSettings struct {
+	SwitchPreference OrbitSwitchPreference
 }
 
 // WaybarSettings captures configuration specific to Waybar integrations.
@@ -202,10 +208,16 @@ func BuildEffective(source string, cfg *Config) (*EffectiveConfig, error) {
 		return nil, err
 	}
 
+	pref, err := ParseOrbitSwitchPreference(cfg.Orbit.SwitchPreference)
+	if err != nil {
+		return nil, err
+	}
+
 	return &EffectiveConfig{
 		Orbits:   orbits,
 		Modules:  modules,
 		Defaults: defaults,
+		Orbit:    OrbitSettings{SwitchPreference: pref},
 		Source:   source,
 		Warnings: warnings,
 		Waybar:   waybar,
@@ -441,6 +453,10 @@ func collectWarnings(cfg *Config) []string {
 
 	if len(cfg.Extras) > 0 {
 		warnings = append(warnings, sortedKeysMessage("config", cfg.Extras))
+	}
+
+	if len(cfg.Orbit.Extras) > 0 {
+		warnings = append(warnings, sortedKeysMessage("orbit", cfg.Orbit.Extras))
 	}
 
 	for i := range cfg.Orbits {

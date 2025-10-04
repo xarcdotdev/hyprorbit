@@ -81,7 +81,7 @@ func NewDaemonState(ctx context.Context, opts Options) (*DaemonState, error) {
 		return nil, err
 	}
 
-	return &DaemonState{
+	state := &DaemonState{
 		opts:          opts,
 		loaderOpts:    loaderOpts,
 		config:        cfg,
@@ -92,7 +92,11 @@ func NewDaemonState(ctx context.Context, opts Options) (*DaemonState, error) {
 		orbitActivity: make(map[string]string, len(cfg.Orbits)),
 		broadcaster:   NewStatusBroadcaster(0),
 		logger:        func(string, ...any) {},
-	}, nil
+	}
+
+	state.refreshOrbitActivity(cfg.Orbits)
+
+	return state, nil
 }
 
 // Start activates background event consumers for the daemon.
@@ -384,13 +388,37 @@ func (s *DaemonState) refreshOrbitActivity(orbits []config.OrbitRecord) {
 	current := s.orbitActivity
 	next := make(map[string]string, len(orbits))
 	for _, orbitRecord := range orbits {
+		name := strings.TrimSpace(orbitRecord.Name)
+		if name == "" {
+			continue
+		}
 		if current != nil {
-			if moduleName := current[orbitRecord.Name]; moduleName != "" {
-				next[orbitRecord.Name] = moduleName
+			if moduleName := strings.TrimSpace(current[name]); moduleName != "" {
+				next[name] = moduleName
 			}
 		}
 	}
 	s.orbitActivity = next
+}
+
+// LastActiveModule returns the most recent module observed within the orbit.
+func (s *DaemonState) LastActiveModule(orbitName string) string {
+	orbitName = strings.TrimSpace(orbitName)
+	if orbitName == "" {
+		return ""
+	}
+	s.orbitActivityMu.RLock()
+	defer s.orbitActivityMu.RUnlock()
+	return s.orbitActivity[orbitName]
+}
+
+// PreferLastActiveFirst reports whether orbit switching should favour the last active module.
+func (s *DaemonState) PreferLastActiveFirst() bool {
+	cfg := s.Config()
+	if cfg == nil {
+		return true
+	}
+	return cfg.Orbit.SwitchPreference != config.OrbitSwitchPreferenceSameModuleFirst
 }
 
 func (s *DaemonState) OrbitSummaries(ctx context.Context) ([]orbit.Summary, error) {

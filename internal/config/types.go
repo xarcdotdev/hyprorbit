@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strings"
 )
 
 var (
@@ -17,6 +18,7 @@ type Config struct {
 	Orbits   []Orbit           `yaml:"orbits"`
 	Modules  map[string]Module `yaml:"modules"`
 	Defaults ModuleDefaults    `yaml:"defaults"`
+	Orbit    OrbitConfig       `yaml:"orbit"`
 	Waybar   WaybarConfig      `yaml:"waybar"`
 	Extras   map[string]any    `yaml:",inline"`
 }
@@ -57,6 +59,35 @@ type ModuleDefaults struct {
 	Float  *bool          `yaml:"float"`
 	Move   *bool          `yaml:"move"`
 	Extras map[string]any `yaml:",inline"`
+}
+
+// OrbitConfig captures global orbit behaviour settings.
+type OrbitConfig struct {
+	SwitchPreference string         `yaml:"switch_preference"`
+	Extras           map[string]any `yaml:",inline"`
+}
+
+// OrbitSwitchPreference determines how orbit switches resolve module focus.
+type OrbitSwitchPreference string
+
+const (
+	OrbitSwitchPreferenceSameModuleFirst OrbitSwitchPreference = "same-module-first"
+	OrbitSwitchPreferenceLastActiveFirst OrbitSwitchPreference = "last-active-first"
+)
+
+// ParseOrbitSwitchPreference normalizes preference strings and applies defaults.
+func ParseOrbitSwitchPreference(value string) (OrbitSwitchPreference, error) {
+	original := value
+	value = strings.TrimSpace(strings.ToLower(value))
+	if value == "" {
+		return OrbitSwitchPreferenceLastActiveFirst, nil
+	}
+	switch OrbitSwitchPreference(value) {
+	case OrbitSwitchPreferenceSameModuleFirst, OrbitSwitchPreferenceLastActiveFirst:
+		return OrbitSwitchPreference(value), nil
+	default:
+		return "", fmt.Errorf("config: orbit switch_preference %q invalid (expected %q or %q)", original, OrbitSwitchPreferenceSameModuleFirst, OrbitSwitchPreferenceLastActiveFirst)
+	}
 }
 
 // Validate verifies structure and naming constraints.
@@ -103,6 +134,10 @@ func (c *Config) Validate() error {
 		if !moduleNamePattern.MatchString(name) {
 			errs = append(errs, fmt.Errorf("config: module %q must match %s", name, moduleNamePattern.String()))
 		}
+	}
+
+	if _, err := ParseOrbitSwitchPreference(c.Orbit.SwitchPreference); err != nil {
+		errs = append(errs, err)
 	}
 
 	if len(errs) == 0 {
