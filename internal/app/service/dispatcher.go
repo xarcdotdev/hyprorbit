@@ -1081,6 +1081,10 @@ func (d *Dispatcher) resolveModuleTarget(ctx context.Context, svc *module.Servic
 	orbitName := strings.TrimSpace(record.Name)
 
 	names := svc.ModuleNames()
+	tempNames := d.state.TempModuleNames(orbitName)
+	if len(tempNames) > 0 {
+		names = mergeStrings(names, tempNames)
+	}
 	if len(names) == 0 {
 		return target, fmt.Errorf("no modules configured")
 	}
