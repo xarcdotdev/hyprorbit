@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -32,6 +33,9 @@ type DaemonState struct {
 
 	orbitActivityMu sync.RWMutex
 	orbitActivity   map[string]string
+
+	tempModulesMu sync.RWMutex
+	tempModules   map[string][]string
 
 	broadcaster *StatusBroadcaster
 
@@ -90,6 +94,7 @@ func NewDaemonState(ctx context.Context, opts Options) (*DaemonState, error) {
 		moduleSvc:     moduleSvc,
 		hyprctl:       hyprClient,
 		orbitActivity: make(map[string]string, len(cfg.Orbits)),
+		tempModules:   make(map[string][]string),
 		broadcaster:   NewStatusBroadcaster(0),
 		logger:        func(string, ...any) {},
 	}
@@ -363,6 +368,71 @@ func (s *DaemonState) recordWorkspaceActivation(workspace string) {
 		return
 	}
 	s.recordActiveModule(moduleName, orbitName)
+}
+
+func (s *DaemonState) registerTempModule(orbitName, moduleName string) {
+	orbitName = strings.TrimSpace(orbitName)
+	moduleName = strings.TrimSpace(moduleName)
+	if orbitName == "" || moduleName == "" {
+		return
+	}
+	s.tempModulesMu.Lock()
+	defer s.tempModulesMu.Unlock()
+	if s.tempModules == nil {
+		s.tempModules = make(map[string][]string)
+	}
+	list := s.tempModules[orbitName]
+	for _, existing := range list {
+		if existing == moduleName {
+			return
+		}
+	}
+	list = append(list, moduleName)
+	sort.Strings(list)
+	s.tempModules[orbitName] = list
+}
+
+func (s *DaemonState) TempModuleNames(orbitName string) []string {
+	orbitName = strings.TrimSpace(orbitName)
+	if orbitName == "" {
+		return nil
+	}
+	s.tempModulesMu.RLock()
+	defer s.tempModulesMu.RUnlock()
+	if len(s.tempModules) == 0 {
+		return nil
+	}
+	list := s.tempModules[orbitName]
+	if len(list) == 0 {
+		return nil
+	}
+	return append([]string(nil), list...)
+}
+
+func (s *DaemonState) tempModuleWorkspace(orbitName, moduleName string) (string, bool) {
+	orbitName = strings.TrimSpace(orbitName)
+	moduleName = strings.TrimSpace(moduleName)
+	if orbitName == "" || moduleName == "" {
+		return "", false
+	}
+	s.tempModulesMu.RLock()
+	defer s.tempModulesMu.RUnlock()
+	if len(s.tempModules) == 0 {
+		return "", false
+	}
+	list := s.tempModules[orbitName]
+	for _, existing := range list {
+		if existing == moduleName {
+			return module.WorkspaceName(moduleName, orbitName), true
+		}
+	}
+	return "", false
+}
+
+func (s *DaemonState) clearTempModules() {
+	s.tempModulesMu.Lock()
+	defer s.tempModulesMu.Unlock()
+	s.tempModules = make(map[string][]string)
 }
 
 func (s *DaemonState) orbitActivitySnapshot() map[string]string {

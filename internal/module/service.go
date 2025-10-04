@@ -48,6 +48,7 @@ type WorkspaceSummary struct {
 	Configured      bool   `json:"configured"`
 	Exists          bool   `json:"exists"`
 	Special         bool   `json:"special,omitempty"`
+	Temporary       bool   `json:"temporary,omitempty"`
 	Windows         int    `json:"windows,omitempty"`
 	Monitor         string `json:"monitor,omitempty"`
 	HasFullscreen   bool   `json:"has_fullscreen,omitempty"`
@@ -119,9 +120,6 @@ func (s *Service) ModuleNames() []string {
 
 // Status returns metadata for the specified module within the given orbit.
 func (s *Service) Status(ctx context.Context, moduleName, orbitName string) (*Status, error) {
-	if _, ok := s.Module(moduleName); !ok {
-		return nil, fmt.Errorf("module %q not configured", moduleName)
-	}
 	record, err := s.orbitSvc.Record(ctx, orbitName)
 	if err != nil {
 		return nil, err
@@ -324,17 +322,28 @@ func (s *Service) WorkspaceSummaries(ctx context.Context) ([]WorkspaceSummary, e
 		if _, ok := seen[name]; ok {
 			continue
 		}
-		summaries = append(summaries, WorkspaceSummary{
+		summary := WorkspaceSummary{
 			Name:            name,
 			Configured:      false,
 			Exists:          true,
-			Special:         true,
 			Windows:         ws.Windows,
 			Monitor:         ws.Monitor,
 			HasFullscreen:   ws.HasFullscreen,
 			LastWindow:      ws.LastWindow,
 			LastWindowTitle: ws.LastWindowTitle,
-		})
+		}
+		if moduleName, orbitName, err := ParseWorkspaceName(name); err == nil {
+			summary.Module = moduleName
+			summary.Orbit = orbitName
+			if _, ok := s.Module(moduleName); !ok {
+				summary.Temporary = true
+				summary.Special = false
+			}
+		}
+		if !summary.Temporary {
+			summary.Special = true
+		}
+		summaries = append(summaries, summary)
 	}
 
 	sort.Slice(summaries, func(i, j int) bool {

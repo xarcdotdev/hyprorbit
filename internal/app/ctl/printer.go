@@ -117,12 +117,19 @@ func PrintWorkspaceSummaries(w io.Writer, opts Options, summaries []module.Works
 
 	for i, summary := range summaries {
 		status := "special"
-		if summary.Configured {
+		switch {
+		case summary.Temporary:
+			status = "temp"
+		case summary.Configured:
 			if summary.Exists {
 				status = "active"
 			} else {
 				status = "inactive"
 			}
+		case summary.Special:
+			status = "special"
+		case summary.Exists:
+			status = "custom"
 		}
 		moduleName := dashIfEmpty(summary.Module)
 		orbitName := dashIfEmpty(summary.Orbit)

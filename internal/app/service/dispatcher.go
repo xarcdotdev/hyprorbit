@@ -35,6 +35,7 @@ type moduleTarget struct {
 	Workspace string
 	Orbit     string
 	Created   bool
+	Temporary bool
 }
 
 // StreamHandler streams data back to a client over an established IPC connection.
@@ -308,6 +309,54 @@ func (d *Dispatcher) handleModule(ctx context.Context, req ipc.Request) (ipc.Res
 		return resp, nil, nil
 	}
 	moduleName := req.Args[0]
+
+	if req.Action == "jump" {
+		var result *module.Result
+		var err error
+		if _, ok := svc.Module(moduleName); ok {
+			result, err = svc.Jump(ctx, moduleName)
+			if err != nil {
+				resp.Error = err.Error()
+				resp.ExitCode = 1
+				return resp, nil, nil
+			}
+		} else {
+			hypr := d.state.HyprctlClient()
+			if hypr == nil {
+				resp.Error = "hyprctl client unavailable"
+				resp.ExitCode = 1
+				return resp, nil, nil
+			}
+			record, err := svc.ActiveOrbit(ctx)
+			if err != nil {
+				resp.Error = err.Error()
+				resp.ExitCode = 1
+				return resp, nil, nil
+			}
+			if record == nil {
+				resp.Error = "active orbit not available"
+				resp.ExitCode = 1
+				return resp, nil, nil
+			}
+			workspace := module.WorkspaceName(moduleName, record.Name)
+			if err := hypr.SwitchWorkspace(ctx, workspace); err != nil {
+				resp.Error = err.Error()
+				resp.ExitCode = 1
+				return resp, nil, nil
+			}
+			d.state.registerTempModule(record.Name, moduleName)
+			result = &module.Result{Action: "jumped", Workspace: workspace, Orbit: record.Name}
+		}
+
+		if err := assignData(&resp, result); err != nil {
+			resp.Error = err.Error()
+			resp.ExitCode = 1
+			return resp, nil, nil
+		}
+		d.recordModuleResult(result)
+		d.publishSnapshot()
+		return resp, nil, nil
+	}
 	if _, ok := svc.Module(moduleName); !ok {
 		available := strings.Join(svc.ModuleNames(), ", ")
 		resp.Error = fmt.Sprintf("module %q not configured (available: %s)", moduleName, available)
@@ -324,21 +373,6 @@ func (d *Dispatcher) handleModule(ctx context.Context, req ipc.Request) (ipc.Res
 			return resp, nil, nil
 		}
 		result, err := svc.Focus(ctx, moduleName, opts)
-		if err != nil {
-			resp.Error = err.Error()
-			resp.ExitCode = 1
-			return resp, nil, nil
-		}
-		if err := assignData(&resp, result); err != nil {
-			resp.Error = err.Error()
-			resp.ExitCode = 1
-			return resp, nil, nil
-		}
-		d.recordModuleResult(result)
-		d.publishSnapshot()
-		return resp, nil, nil
-	case "jump":
-		result, err := svc.Jump(ctx, moduleName)
 		if err != nil {
 			resp.Error = err.Error()
 			resp.ExitCode = 1
@@ -410,14 +444,21 @@ func (d *Dispatcher) handleModuleStep(ctx context.Context, svc *module.Service, 
 		return resp, nil, nil
 	}
 
-	moduleName, _, err := module.ParseWorkspaceName(name)
+	moduleName, orbitName, err := module.ParseWorkspaceName(name)
 	if err != nil {
 		resp.Error = fmt.Sprintf("active workspace %q is not a module workspace", name)
 		resp.ExitCode = 1
 		return resp, nil, nil
 	}
+	if _, ok := svc.Module(moduleName); !ok {
+		d.state.registerTempModule(orbitName, moduleName)
+	}
 
 	names := svc.ModuleNames()
+	tempNames := d.state.TempModuleNames(orbitName)
+	if len(tempNames) > 0 {
+		names = mergeStrings(names, tempNames)
+	}
 	if len(names) == 0 {
 		resp.Error = "no modules configured"
 		resp.ExitCode = 1
@@ -438,11 +479,29 @@ func (d *Dispatcher) handleModuleStep(ctx context.Context, svc *module.Service, 
 	}
 
 	target := names[idx]
-	result, err := svc.Jump(ctx, target)
-	if err != nil {
-		resp.Error = err.Error()
-		resp.ExitCode = 1
-		return resp, nil, nil
+	var result *module.Result
+	if _, ok := svc.Module(target); ok {
+		result, err = svc.Jump(ctx, target)
+		if err != nil {
+			resp.Error = err.Error()
+			resp.ExitCode = 1
+			return resp, nil, nil
+		}
+	} else if workspace, ok := d.state.tempModuleWorkspace(orbitName, target); ok {
+		if err := hypr.SwitchWorkspace(ctx, workspace); err != nil {
+			resp.Error = err.Error()
+			resp.ExitCode = 1
+			return resp, nil, nil
+		}
+		result = &module.Result{Action: "jumped", Workspace: workspace, Orbit: orbitName}
+	} else {
+		workspace := module.WorkspaceName(target, orbitName)
+		if err := hypr.SwitchWorkspace(ctx, workspace); err != nil {
+			resp.Error = err.Error()
+			resp.ExitCode = 1
+			return resp, nil, nil
+		}
+		result = &module.Result{Action: "jumped", Workspace: workspace, Orbit: orbitName}
 	}
 
 	if err := assignData(&resp, result); err != nil {
@@ -535,6 +594,11 @@ func (d *Dispatcher) createModuleWorkspace(ctx context.Context, svc *module.Serv
 		if err := hypr.SwitchWorkspace(ctx, origin); err != nil {
 			return nil, err
 		}
+	}
+
+	moduleName, _, err := module.ParseWorkspaceName(target)
+	if err == nil {
+		d.state.registerTempModule(orbitName, moduleName)
 	}
 
 	return &module.Result{Action: "created", Workspace: target, Orbit: orbitName}, nil
@@ -759,7 +823,7 @@ func filterWorkspaceSummaries(summaries []module.WorkspaceSummary, filter string
 	for _, summary := range summaries {
 		switch filter {
 		case "active":
-			if summary.Configured && summary.Exists {
+			if (summary.Configured && summary.Exists) || (summary.Temporary && summary.Exists) {
 				filtered = append(filtered, summary)
 			}
 		case "inactive":
@@ -798,6 +862,7 @@ func (d *Dispatcher) resetWorkspaces(ctx context.Context) error {
 		return fmt.Errorf("workspace reset: %w", err)
 	}
 	d.state.InvalidateClients()
+	d.state.clearTempModules()
 	return nil
 }
 
@@ -998,8 +1063,10 @@ func (d *Dispatcher) resolveModuleTarget(ctx context.Context, svc *module.Servic
 		target.Workspace = res.Workspace
 		target.Orbit = res.Orbit
 		target.Created = true
-		if moduleName, _, err := module.ParseWorkspaceName(res.Workspace); err == nil {
+		if moduleName, orbit, err := module.ParseWorkspaceName(res.Workspace); err == nil {
 			target.Module = moduleName
+			target.Temporary = true
+			d.state.registerTempModule(orbit, moduleName)
 		}
 		return target, nil
 	}
@@ -1021,6 +1088,10 @@ func (d *Dispatcher) resolveModuleTarget(ctx context.Context, svc *module.Servic
 	moduleName, err := d.selectModuleName(names, current, spec)
 	if err != nil {
 		return target, err
+	}
+	if _, ok := svc.Module(moduleName); !ok {
+		d.state.registerTempModule(orbitName, moduleName)
+		target.Temporary = true
 	}
 
 	workspace := module.WorkspaceName(moduleName, orbitName)
@@ -1269,4 +1340,27 @@ func indexOf(values []string, needle string) int {
 		}
 	}
 	return -1
+}
+
+func mergeStrings(base, extra []string) []string {
+	if len(extra) == 0 {
+		return base
+	}
+	seen := make(map[string]struct{}, len(base)+len(extra))
+	merged := make([]string, 0, len(base)+len(extra))
+	for _, v := range base {
+		if _, ok := seen[v]; ok {
+			continue
+		}
+		seen[v] = struct{}{}
+		merged = append(merged, v)
+	}
+	for _, v := range extra {
+		if _, ok := seen[v]; ok {
+			continue
+		}
+		seen[v] = struct{}{}
+		merged = append(merged, v)
+	}
+	return merged
 }
