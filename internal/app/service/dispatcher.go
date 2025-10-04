@@ -261,6 +261,10 @@ func (d *Dispatcher) handleModule(ctx context.Context, req ipc.Request) (ipc.Res
 		return resp, nil, nil
 	case "get":
 		return d.handleModuleGet(ctx), nil, nil
+	case "jump-next":
+		return d.handleModuleStep(ctx, svc, 1)
+	case "jump-prev":
+		return d.handleModuleStep(ctx, svc, -1)
 	}
 
 	if len(req.Args) == 0 {
@@ -332,6 +336,86 @@ func (d *Dispatcher) handleModule(ctx context.Context, req ipc.Request) (ipc.Res
 		resp.ExitCode = 2
 		return resp, nil, nil
 	}
+}
+
+func (d *Dispatcher) handleModuleStep(ctx context.Context, svc *module.Service, delta int) (ipc.Response, StreamHandler, error) {
+	resp := ipc.NewResponse(false)
+
+	if delta == 0 {
+		resp.Error = "module step: delta cannot be zero"
+		resp.ExitCode = 2
+		return resp, nil, nil
+	}
+
+	hypr := d.state.HyprctlClient()
+	if hypr == nil {
+		resp.Error = "hyprctl client unavailable"
+		resp.ExitCode = 1
+		return resp, nil, nil
+	}
+
+	ws, err := hypr.ActiveWorkspace(ctx)
+	if err != nil {
+		resp.Error = err.Error()
+		resp.ExitCode = 1
+		return resp, nil, nil
+	}
+	if ws == nil {
+		resp.Error = "active workspace not available"
+		resp.ExitCode = 1
+		return resp, nil, nil
+	}
+
+	name := strings.TrimSpace(ws.Name)
+	if name == "" {
+		resp.Error = "active workspace name is empty"
+		resp.ExitCode = 1
+		return resp, nil, nil
+	}
+
+	moduleName, _, err := module.ParseWorkspaceName(name)
+	if err != nil {
+		resp.Error = fmt.Sprintf("active workspace %q is not a module workspace", name)
+		resp.ExitCode = 1
+		return resp, nil, nil
+	}
+
+	names := svc.ModuleNames()
+	if len(names) == 0 {
+		resp.Error = "no modules configured"
+		resp.ExitCode = 1
+		return resp, nil, nil
+	}
+
+	idx := indexOf(names, moduleName)
+	if idx == -1 {
+		if delta > 0 {
+			idx = 0
+		} else {
+			idx = len(names) - 1
+		}
+	} else {
+		next := idx + delta
+		next = (next%len(names) + len(names)) % len(names)
+		idx = next
+	}
+
+	target := names[idx]
+	result, err := svc.Jump(ctx, target)
+	if err != nil {
+		resp.Error = err.Error()
+		resp.ExitCode = 1
+		return resp, nil, nil
+	}
+
+	if err := assignData(&resp, result); err != nil {
+		resp.Error = err.Error()
+		resp.ExitCode = 1
+		return resp, nil, nil
+	}
+
+	d.publishSnapshot()
+	return resp, nil, nil
 }
 
 func (d *Dispatcher) handleModuleGet(ctx context.Context) ipc.Response {

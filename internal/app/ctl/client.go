@@ -174,8 +174,24 @@ func (c *Client) ModuleFocus(ctx context.Context, moduleName string, opts Module
 
 // ModuleJump switches to the module workspace within the active orbit.
 func (c *Client) ModuleJump(ctx context.Context, moduleName string) (*module.Result, error) {
-	req := ipc.NewRequest("module", "jump")
-	req.Args = []string{moduleName}
+	return c.moduleJump(ctx, "jump", []string{moduleName})
+}
+
+// ModuleJumpNext cycles to the next module workspace within the active orbit.
+func (c *Client) ModuleJumpNext(ctx context.Context) (*module.Result, error) {
+	return c.moduleJump(ctx, "jump-next", nil)
+}
+
+// ModuleJumpPrev cycles to the previous module workspace within the active orbit.
+func (c *Client) ModuleJumpPrev(ctx context.Context) (*module.Result, error) {
+	return c.moduleJump(ctx, "jump-prev", nil)
+}
+
+func (c *Client) moduleJump(ctx context.Context, action string, args []string) (*module.Result, error) {
+	req := ipc.NewRequest("module", action)
+	if len(args) > 0 {
+		req.Args = append(req.Args, args...)
+	}
 	var res module.Result
 	if _, err := c.Call(ctx, req, &res); err != nil {
 		return nil, err
