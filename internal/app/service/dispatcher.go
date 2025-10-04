@@ -265,6 +265,8 @@ func (d *Dispatcher) handleModule(ctx context.Context, req ipc.Request) (ipc.Res
 		return d.handleModuleStep(ctx, svc, 1)
 	case "jump-prev":
 		return d.handleModuleStep(ctx, svc, -1)
+	case "jump-create":
+		return d.handleModuleCreate(ctx, svc)
 	}
 
 	if len(req.Args) == 0 {
@@ -408,6 +410,79 @@ func (d *Dispatcher) handleModuleStep(ctx context.Context, svc *module.Service, 
 		return resp, nil, nil
 	}
 
+	if err := assignData(&resp, result); err != nil {
+		resp.Error = err.Error()
+		resp.ExitCode = 1
+		return resp, nil, nil
+	}
+
+	d.publishSnapshot()
+	return resp, nil, nil
+}
+
+func (d *Dispatcher) handleModuleCreate(ctx context.Context, svc *module.Service) (ipc.Response, StreamHandler, error) {
+	resp := ipc.NewResponse(false)
+
+	hypr := d.state.HyprctlClient()
+	if hypr == nil {
+		resp.Error = "hyprctl client unavailable"
+		resp.ExitCode = 1
+		return resp, nil, nil
+	}
+
+	record, err := svc.ActiveOrbit(ctx)
+	if err != nil {
+		resp.Error = err.Error()
+		resp.ExitCode = 1
+		return resp, nil, nil
+	}
+	if record == nil || strings.TrimSpace(record.Name) == "" {
+		resp.Error = "active orbit not available"
+		resp.ExitCode = 1
+		return resp, nil, nil
+	}
+	orbitName := strings.TrimSpace(record.Name)
+
+	workspaces, err := hypr.Workspaces(ctx)
+	if err != nil {
+		resp.Error = err.Error()
+		resp.ExitCode = 1
+		return resp, nil, nil
+	}
+
+	existing := make(map[string]struct{}, len(workspaces))
+	for _, ws := range workspaces {
+		name := strings.TrimSpace(ws.Name)
+		if name == "" {
+			continue
+		}
+		existing[name] = struct{}{}
+	}
+
+	const maxTemporaryWorkspace = 99
+	var target string
+	for i := 1; i <= maxTemporaryWorkspace; i++ {
+		candidate := fmt.Sprintf("%d-%s", i, orbitName)
+		if _, ok := existing[candidate]; ok {
+			continue
+		}
+		target = candidate
+		break
+	}
+
+	if target == "" {
+		resp.Error = "no temporary workspace slots available"
+		resp.ExitCode = 1
+		return resp, nil, nil
+	}
+
+	if err := hypr.SwitchWorkspace(ctx, target); err != nil {
+		resp.Error = err.Error()
+		resp.ExitCode = 1
+		return resp, nil, nil
+	}
+
+	result := &module.Result{Action: "created", Workspace: target, Orbit: orbitName}
 	if err := assignData(&resp, result); err != nil {
 		resp.Error = err.Error()
 		resp.ExitCode = 1

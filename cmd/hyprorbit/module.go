@@ -50,7 +50,7 @@ func newModuleGetCommand() *cobra.Command {
 
 func newModuleJumpCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:   "jump <module|next|prev>",
+		Use:   "jump <module|next|prev|create>",
 		Short: "Jump to a module workspace in the active orbit",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -66,6 +66,8 @@ func newModuleJumpCommand() *cobra.Command {
 				res, err = client.ModuleJumpNext(cmd.Context())
 			case "prev":
 				res, err = client.ModuleJumpPrev(cmd.Context())
+			case "create":
+				res, err = client.ModuleJumpCreate(cmd.Context())
 			default:
 				res, err = client.ModuleJump(cmd.Context(), arg)
 			}

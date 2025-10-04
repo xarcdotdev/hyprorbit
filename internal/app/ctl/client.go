@@ -187,6 +187,11 @@ func (c *Client) ModuleJumpPrev(ctx context.Context) (*module.Result, error) {
 	return c.moduleJump(ctx, "jump-prev", nil)
 }
 
+// ModuleJumpCreate creates a temporary workspace in the active orbit and switches to it.
+func (c *Client) ModuleJumpCreate(ctx context.Context) (*module.Result, error) {
+	return c.moduleJump(ctx, "jump-create", nil)
+}
+
 func (c *Client) moduleJump(ctx context.Context, action string, args []string) (*module.Result, error) {
 	req := ipc.NewRequest("module", action)
 	if len(args) > 0 {
