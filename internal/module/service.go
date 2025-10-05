@@ -187,7 +187,7 @@ func (s *Service) Focus(ctx context.Context, moduleName string, opts FocusOption
 		return nil, err
 	}
 
-	workspaceClients, orbitClients := bucketClients(clients, matcher, compiled, workspace, orbitRecord.Name)
+	workspaceClients, orbitClients, globalClients := bucketClients(clients, matcher, compiled, workspace, orbitRecord.Name, opts.Global)
 
 	if len(workspaceClients) > 0 {
 		client := workspaceClients[0]
@@ -213,6 +213,19 @@ func (s *Service) Focus(ctx context.Context, moduleName string, opts FocusOption
 			}
 		}
 		return &Result{Action: "moved", Workspace: workspace}, nil
+	}
+
+	if opts.Global && len(globalClients) > 0 {
+		client := globalClients[0]
+		if err := s.hyprctl.MoveToWorkspace(ctx, client.Address, workspace); err != nil {
+			return nil, err
+		}
+		if shouldFloat && !client.Floating {
+			if err := s.hyprctl.Dispatch(ctx, "togglefloating", "address:"+client.Address); err != nil {
+				return nil, err
+			}
+		}
+		return &Result{Action: "moved-global", Workspace: workspace}, nil
 	}
 
 	if len(spawnCmd) == 0 {
@@ -415,9 +428,13 @@ func dispatchSequence(ctx context.Context, client runtime.HyprctlClient, command
 	return err
 }
 
-func bucketClients(clients []hyprctl.ClientInfo, matcher config.Matcher, compiled *regexp.Regexp, workspace string, orbitName string) ([]hyprctl.ClientInfo, []hyprctl.ClientInfo) {
+func bucketClients(clients []hyprctl.ClientInfo, matcher config.Matcher, compiled *regexp.Regexp, workspace string, orbitName string, global bool) ([]hyprctl.ClientInfo, []hyprctl.ClientInfo, []hyprctl.ClientInfo) {
 	workspaceMatches := make([]hyprctl.ClientInfo, 0)
 	orbitMatches := make([]hyprctl.ClientInfo, 0)
+	var globalMatches []hyprctl.ClientInfo
+	if global {
+		globalMatches = make([]hyprctl.ClientInfo, 0)
+	}
 	suffix := "-" + orbitName
 	for _, client := range clients {
 		value := client.FieldValue(matcher.Field)
@@ -431,9 +448,13 @@ func bucketClients(clients []hyprctl.ClientInfo, matcher config.Matcher, compile
 		}
 		if strings.HasSuffix(ws, suffix) {
 			orbitMatches = append(orbitMatches, client)
+			continue
+		}
+		if global {
+			globalMatches = append(globalMatches, client)
 		}
 	}
-	return workspaceMatches, orbitMatches
+	return workspaceMatches, orbitMatches, globalMatches
 }
 
 func hasWorkspaceClients(clients []hyprctl.ClientInfo, workspace string) bool {

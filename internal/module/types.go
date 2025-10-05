@@ -20,6 +20,7 @@ type FocusOptions struct {
 	CmdOverride     []string
 	ForceFloat      bool
 	NoMove          bool
+	Global          bool
 }
 
 // SeedStep expresses a single seed instruction for module bootstrapping.

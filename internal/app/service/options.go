@@ -121,6 +121,13 @@ func focusOptionsFromFlags(flags map[string]any) (module.FocusOptions, error) {
 		}
 		opts.NoMove = b
 	}
+	if global, ok := flags["global"]; ok {
+		b, err := util.ToBool(global)
+		if err != nil {
+			return opts, fmt.Errorf("module focus global must be boolean")
+		}
+		opts.Global = b
+	}
 	return opts, nil
 }
 

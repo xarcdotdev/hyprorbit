@@ -85,6 +85,7 @@ func newModuleFocusCommand() *cobra.Command {
 		spawnCmd  []string
 		floatWin  bool
 		noMove    bool
+		global    bool
 	)
 
 	cmd := &cobra.Command{
@@ -108,6 +109,7 @@ func newModuleFocusCommand() *cobra.Command {
 				Command:    spawnCmd,
 				ForceFloat: floatWin,
 				NoMove:     noMove,
+				Global:     global,
 			})
 			if err != nil {
 				return err
@@ -120,6 +122,7 @@ func newModuleFocusCommand() *cobra.Command {
 	cmd.Flags().StringSliceVar(&spawnCmd, "cmd", nil, "Command to spawn when no client matches")
 	cmd.Flags().BoolVar(&floatWin, "float", false, "Force spawned window to float")
 	cmd.Flags().BoolVar(&noMove, "no-move", false, "Prevent moving clients between workspaces")
+	cmd.Flags().BoolVar(&global, "global", false, "Search for matching clients in all orbits")
 
 	return cmd
 }

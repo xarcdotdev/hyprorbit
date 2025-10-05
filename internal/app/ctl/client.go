@@ -214,6 +214,7 @@ type ModuleFocusOptions struct {
 	Command    []string
 	ForceFloat bool
 	NoMove     bool
+	Global     bool
 }
 
 // ModuleFocus performs focus-or-launch for the given module.
@@ -232,6 +233,9 @@ func (c *Client) ModuleFocus(ctx context.Context, moduleName string, opts Module
 	}
 	if opts.NoMove {
 		flags["no_move"] = true
+	}
+	if opts.Global {
+		flags["global"] = true
 	}
 	if len(flags) > 0 {
 		req.Flags = flags

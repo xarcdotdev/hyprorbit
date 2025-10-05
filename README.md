@@ -211,6 +211,9 @@ hyprorbit module focus email --cmd "thunderbird"
 
 # Prevent window moving
 hyprorbit module focus email --no-move
+
+# Search for matching clients across all orbits (for single-instance apps)
+hyprorbit module focus email --global
 ```
 
 **Module Focus Mechanism**
@@ -223,11 +226,14 @@ Instead of Hyprland's windowrules, hyprorbit uses `module focus <name>` to assig
 3. Then:
    - **Focus** if match exists in workspace
    - **Move** if match exists elsewhere in orbit
+   - **Move from global** (with `--global`) if match exists in any other orbit
    - **Spawn** fallback command if no match found
 
 Result: One window per module/orbit, automatically placed. You can still manually open applications elsewhere when needed.
 
-**Overrides:** `--match`, `--cmd`, `--float`, `--no-move`
+**Overrides:** `--match`, `--cmd`, `--float`, `--no-move`, `--global`
+
+**Note:** Use `--global` for single-instance applications that don't allow multiple instances running simultaneously. This searches for the application across all orbits and brings it to the current one.
 
 **Advanced:** A window can belong to multiple modules. Your email client could live in both `comm` and `outreach`, accessible from either module's workspace.
 
