@@ -115,3 +115,43 @@ func sanitizeTags(tags []string) []string {
 	}
 	return clean
 }
+
+// DescribeClient returns a human-readable description of a client.
+// Priority: "title (class)", title, class, address, or "window" as fallback.
+func DescribeClient(client hyprctl.ClientInfo) string {
+	title := strings.TrimSpace(client.Title)
+	class := strings.TrimSpace(client.Class)
+	if title != "" && class != "" {
+		return title + " (" + class + ")"
+	}
+	if title != "" {
+		return title
+	}
+	if class != "" {
+		return class
+	}
+	if addr := strings.TrimSpace(client.Address); addr != "" {
+		return addr
+	}
+	return "window"
+}
+
+// ClientInfoFromWindow converts a hyprctl.Window to hyprctl.ClientInfo.
+func ClientInfoFromWindow(win *hyprctl.Window) hyprctl.ClientInfo {
+	if win == nil {
+		return hyprctl.ClientInfo{}
+	}
+	info := hyprctl.ClientInfo{
+		Address:      win.Address,
+		Class:        win.Class,
+		Title:        win.Title,
+		InitialClass: win.InitialClass,
+		InitialTitle: win.InitialTitle,
+		Floating:     bool(win.Floating),
+		Tags:         win.Tags,
+		Workspace: hyprctl.WorkspaceHandle{
+			Name: win.Workspace.Name,
+		},
+	}
+	return SanitizeClient(info)
+}

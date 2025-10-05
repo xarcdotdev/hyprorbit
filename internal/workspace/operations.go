@@ -62,3 +62,19 @@ func WindowCount(ctx context.Context, hypr runtime.HyprctlClient, workspace stri
 	}
 	return 0, nil
 }
+
+// ActiveName returns the name of the active workspace.
+func ActiveName(ctx context.Context, hypr runtime.HyprctlClient) (string, error) {
+	ws, err := hypr.ActiveWorkspace(ctx)
+	if err != nil {
+		return "", err
+	}
+	if ws == nil {
+		return "", fmt.Errorf("active workspace not available")
+	}
+	name := strings.TrimSpace(ws.Name)
+	if name == "" {
+		return "", fmt.Errorf("active workspace name unavailable")
+	}
+	return name, nil
+}

@@ -40,3 +40,20 @@ func NewResponse(success bool) Response {
 		Success: success,
 	}
 }
+
+// AssignData marshals a value to JSON and assigns it to the response data field.
+// If value is nil, the response is marked successful with nil data.
+func AssignData(resp *Response, value any) error {
+	if value == nil {
+		resp.Success = true
+		resp.Data = nil
+		return nil
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	resp.Data = data
+	resp.Success = true
+	return nil
+}

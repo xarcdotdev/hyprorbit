@@ -44,9 +44,6 @@ type moduleTarget struct {
 	Temporary bool
 }
 
-type orbitProvider interface {
-	ActiveOrbit(context.Context) (*orbit.Record, error)
-}
 
 // StreamHandler streams data back to a client over an established IPC connection.
 type StreamHandler func(ctx context.Context, conn net.Conn) error
@@ -129,7 +126,7 @@ func (d *Dispatcher) handleOrbit(ctx context.Context, req ipc.Request) (ipc.Resp
 			resp.ExitCode = 1
 			return resp, nil
 		}
-		if err := assignData(&resp, record); err != nil {
+		if err := ipc.AssignData(&resp, record); err != nil {
 			resp.Error = err.Error()
 			resp.ExitCode = 1
 			return resp, nil
@@ -146,7 +143,7 @@ func (d *Dispatcher) handleOrbit(ctx context.Context, req ipc.Request) (ipc.Resp
 			resp.ExitCode = 1
 			return resp, nil
 		}
-		if err := assignData(&resp, summaries); err != nil {
+		if err := ipc.AssignData(&resp, summaries); err != nil {
 			resp.Error = err.Error()
 			resp.ExitCode = 1
 			return resp, nil
@@ -182,7 +179,7 @@ func (d *Dispatcher) handleOrbit(ctx context.Context, req ipc.Request) (ipc.Resp
 			return resp, nil
 		}
 		d.state.InvalidateClients()
-		if err := assignData(&resp, record); err != nil {
+		if err := ipc.AssignData(&resp, record); err != nil {
 			resp.Error = err.Error()
 			resp.ExitCode = 1
 			return resp, nil
@@ -254,7 +251,7 @@ func (d *Dispatcher) handleOrbitStep(ctx context.Context, svc *orbit.Service, de
 		resp.ExitCode = 1
 		return resp, nil
 	}
-	if err := assignData(&resp, record); err != nil {
+	if err := ipc.AssignData(&resp, record); err != nil {
 		resp.Error = err.Error()
 		resp.ExitCode = 1
 		return resp, nil
@@ -287,7 +284,7 @@ func (d *Dispatcher) handleModule(ctx context.Context, req ipc.Request) (ipc.Res
 			return resp, nil, nil
 		}
 		filtered := filterWorkspaceSummaries(summaries, filter)
-		if err := assignData(&resp, filtered); err != nil {
+		if err := ipc.AssignData(&resp, filtered); err != nil {
 			resp.Error = err.Error()
 			resp.ExitCode = 1
 			return resp, nil, nil
@@ -382,7 +379,7 @@ func (d *Dispatcher) handleModule(ctx context.Context, req ipc.Request) (ipc.Res
 			d.cleanupTemporaryWorkspace(ctx, hypr, originWorkspace)
 		}
 
-		if err := assignData(&resp, result); err != nil {
+		if err := ipc.AssignData(&resp, result); err != nil {
 			resp.Error = err.Error()
 			resp.ExitCode = 1
 			return resp, nil, nil
@@ -412,7 +409,7 @@ func (d *Dispatcher) handleModule(ctx context.Context, req ipc.Request) (ipc.Res
 			resp.ExitCode = 1
 			return resp, nil, nil
 		}
-		if err := assignData(&resp, result); err != nil {
+		if err := ipc.AssignData(&resp, result); err != nil {
 			resp.Error = err.Error()
 			resp.ExitCode = 1
 			return resp, nil, nil
@@ -430,7 +427,7 @@ func (d *Dispatcher) handleModule(ctx context.Context, req ipc.Request) (ipc.Res
 		if results == nil {
 			results = []*module.Result{}
 		}
-		if err := assignData(&resp, results); err != nil {
+		if err := ipc.AssignData(&resp, results); err != nil {
 			resp.Error = err.Error()
 			resp.ExitCode = 1
 			return resp, nil, nil
@@ -539,7 +536,7 @@ func (d *Dispatcher) handleModuleStep(ctx context.Context, svc *module.Service, 
 		result = &module.Result{Action: "jumped", Workspace: workspace, Orbit: orbitName}
 	}
 
-	if err := assignData(&resp, result); err != nil {
+	if err := ipc.AssignData(&resp, result); err != nil {
 		resp.Error = err.Error()
 		resp.ExitCode = 1
 		return resp, nil, nil
@@ -570,7 +567,7 @@ func (d *Dispatcher) handleModuleCreate(ctx context.Context, svc *module.Service
 		return resp, nil, nil
 	}
 
-	if err := assignData(&resp, result); err != nil {
+	if err := ipc.AssignData(&resp, result); err != nil {
 		resp.Error = err.Error()
 		resp.ExitCode = 1
 		return resp, nil, nil
@@ -584,21 +581,6 @@ func (d *Dispatcher) handleModuleCreate(ctx context.Context, svc *module.Service
 // *********************************************
 // Helper functions
 // *********************************************
-
-func assignData(resp *ipc.Response, value any) error {
-	if value == nil {
-		resp.Success = true
-		resp.Data = nil
-		return nil
-	}
-	data, err := json.Marshal(value)
-	if err != nil {
-		return err
-	}
-	resp.Data = data
-	resp.Success = true
-	return nil
-}
 
 func (d *Dispatcher) createModuleWorkspace(ctx context.Context, svc *module.Service, hypr runtime.HyprctlClient, origin string) (*module.Result, error) {
 	if hypr == nil {
@@ -706,7 +688,7 @@ func (d *Dispatcher) handleWindowMove(ctx context.Context, req ipc.Request) (ipc
 	}
 
 	modSvc := d.state.ModuleService()
-	var orbitProvider orbitProvider
+	var orbitProvider orbit.Provider
 	if modSvc != nil {
 		orbitProvider = modSvc
 	}
@@ -754,7 +736,7 @@ func (d *Dispatcher) handleWindowMove(ctx context.Context, req ipc.Request) (ipc
 		payload = results
 	}
 
-	if err := assignData(&resp, payload); err != nil {
+	if err := ipc.AssignData(&resp, payload); err != nil {
 		resp.Error = err.Error()
 		resp.ExitCode = 1
 		return resp, nil, nil
@@ -764,7 +746,7 @@ func (d *Dispatcher) handleWindowMove(ctx context.Context, req ipc.Request) (ipc
 	return resp, nil, nil
 }
 
-func (d *Dispatcher) resolveWindowSelection(ctx context.Context, hypr runtime.HyprctlClient, orbit orbitProvider, ref string) ([]hyprctl.ClientInfo, error) {
+func (d *Dispatcher) resolveWindowSelection(ctx context.Context, hypr runtime.HyprctlClient, orbitProvider orbit.Provider, ref string) ([]hyprctl.ClientInfo, error) {
 	ref = strings.TrimSpace(ref)
 	if ref == "" {
 		return nil, fmt.Errorf("window reference cannot be empty")
@@ -779,13 +761,13 @@ func (d *Dispatcher) resolveWindowSelection(ctx context.Context, hypr runtime.Hy
 		if win == nil {
 			return nil, nil
 		}
-		client := clientInfoFromWindow(win)
+		client := window.ClientInfoFromWindow(win)
 		if client.Address == "" {
 			return nil, nil
 		}
 		return []hyprctl.ClientInfo{client}, nil
 	case lower == "workspace":
-		workspaceName, err := activeWorkspaceName(ctx, hypr)
+		workspaceName, err := workspace.ActiveName(ctx, hypr)
 		if err != nil {
 			return nil, err
 		}
@@ -827,7 +809,7 @@ func (d *Dispatcher) resolveWindowSelection(ctx context.Context, hypr runtime.Hy
 
 		var workspaceName string
 		if reference.Scope == window.ScopeWorkspace || reference.Scope == window.ScopeOrbit {
-			workspaceName, err = activeWorkspaceName(ctx, hypr)
+			workspaceName, err = workspace.ActiveName(ctx, hypr)
 			if err != nil {
 				return nil, err
 			}
@@ -835,7 +817,7 @@ func (d *Dispatcher) resolveWindowSelection(ctx context.Context, hypr runtime.Hy
 
 		var orbitName string
 		if reference.Scope == window.ScopeOrbit {
-			orbitName, err = activeOrbitName(ctx, orbit)
+			orbitName, err = orbit.ActiveName(ctx, orbitProvider)
 			if err != nil {
 				return nil, err
 			}
@@ -857,39 +839,6 @@ func (d *Dispatcher) resolveWindowSelection(ctx context.Context, hypr runtime.Hy
 	return nil, fmt.Errorf("window reference %q not supported", ref)
 }
 
-func activeWorkspaceName(ctx context.Context, hypr runtime.HyprctlClient) (string, error) {
-	ws, err := hypr.ActiveWorkspace(ctx)
-	if err != nil {
-		return "", err
-	}
-	if ws == nil {
-		return "", fmt.Errorf("active workspace not available")
-	}
-	name := strings.TrimSpace(ws.Name)
-	if name == "" {
-		return "", fmt.Errorf("active workspace name unavailable")
-	}
-	return name, nil
-}
-
-func activeOrbitName(ctx context.Context, provider orbitProvider) (string, error) {
-	if provider == nil {
-		return "", fmt.Errorf("active orbit not available")
-	}
-	record, err := provider.ActiveOrbit(ctx)
-	if err != nil {
-		return "", err
-	}
-	if record == nil {
-		return "", fmt.Errorf("active orbit not available")
-	}
-	name := strings.TrimSpace(record.Name)
-	if name == "" {
-		return "", fmt.Errorf("active orbit not available")
-	}
-	return name, nil
-}
-
 func decodeClients(ctx context.Context, hypr runtime.HyprctlClient) ([]hyprctl.ClientInfo, error) {
 	var clients []hyprctl.ClientInfo
 	if err := hypr.DecodeClients(ctx, &clients); err != nil {
@@ -898,42 +847,6 @@ func decodeClients(ctx context.Context, hypr runtime.HyprctlClient) ([]hyprctl.C
 	return clients, nil
 }
 
-func describeClient(client hyprctl.ClientInfo) string {
-	title := strings.TrimSpace(client.Title)
-	class := strings.TrimSpace(client.Class)
-	if title != "" && class != "" {
-		return fmt.Sprintf("%s (%s)", title, class)
-	}
-	if title != "" {
-		return title
-	}
-	if class != "" {
-		return class
-	}
-	if addr := strings.TrimSpace(client.Address); addr != "" {
-		return addr
-	}
-	return "window"
-}
-
-func clientInfoFromWindow(win *hyprctl.Window) hyprctl.ClientInfo {
-	if win == nil {
-		return hyprctl.ClientInfo{}
-	}
-	info := hyprctl.ClientInfo{
-		Address:      win.Address,
-		Class:        win.Class,
-		Title:        win.Title,
-		InitialClass: win.InitialClass,
-		InitialTitle: win.InitialTitle,
-		Floating:     bool(win.Floating),
-		Tags:         win.Tags,
-		Workspace: hyprctl.WorkspaceHandle{
-			Name: win.Workspace.Name,
-		},
-	}
-	return window.SanitizeClient(info)
-}
 func (d *Dispatcher) handleModuleGet(ctx context.Context) ipc.Response {
 	resp := ipc.NewResponse(false)
 	svc := d.state.ModuleService()
@@ -979,7 +892,7 @@ func (d *Dispatcher) handleModuleGet(ctx context.Context) ipc.Response {
 		return resp
 	}
 
-	if err := assignData(&resp, status); err != nil {
+	if err := ipc.AssignData(&resp, status); err != nil {
 		resp.Error = err.Error()
 		resp.ExitCode = 1
 		return resp
@@ -1312,7 +1225,7 @@ func (d *Dispatcher) moveClientToModule(ctx context.Context, svc *module.Service
 
 	d.state.recordWorkspaceActivation(target.Workspace)
 
-	result.Window = describeClient(client)
+	result.Window = window.DescribeClient(client)
 	result.Workspace = target.Workspace
 	result.Module = target.Module
 	result.Orbit = target.Orbit
