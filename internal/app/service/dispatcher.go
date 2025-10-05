@@ -53,13 +53,18 @@ func NewDispatcher(state *DaemonState) *Dispatcher {
 	return &Dispatcher{state: state}
 }
 
+// errorResponse creates a failed response with the given error message and exit code.
+func errorResponse(msg string, exitCode int) ipc.Response {
+	resp := ipc.NewResponse(false)
+	resp.Error = msg
+	resp.ExitCode = exitCode
+	return resp
+}
+
 // Handle executes the request, returning a response suitable for IPC clients and an optional stream handler.
 func (d *Dispatcher) Handle(ctx context.Context, req ipc.Request) (ipc.Response, StreamHandler, error) {
 	if req.Version != ipc.Version {
-		resp := ipc.NewResponse(false)
-		resp.Error = fmt.Sprintf("unsupported protocol version %d", req.Version)
-		resp.ExitCode = 1
-		return resp, nil, nil
+		return errorResponse(fmt.Sprintf("unsupported protocol version %d", req.Version), 1), nil, nil
 	}
 
 	switch req.Command {
@@ -74,10 +79,7 @@ func (d *Dispatcher) Handle(ctx context.Context, req ipc.Request) (ipc.Response,
 		resp, stream := d.handleDaemon(ctx, req)
 		return resp, stream, nil
 	default:
-		resp := ipc.NewResponse(false)
-		resp.Error = fmt.Sprintf("unknown command %q", req.Command)
-		resp.ExitCode = 2
-		return resp, nil, nil
+		return errorResponse(fmt.Sprintf("unknown command %q", req.Command), 2), nil, nil
 	}
 }
 
@@ -89,17 +91,13 @@ func (d *Dispatcher) handleDaemon(ctx context.Context, req ipc.Request) (ipc.Res
 		return resp, nil
 	case "reload":
 		if err := d.state.Reload(ctx); err != nil {
-			resp.Error = err.Error()
-			resp.ExitCode = 1
-			return resp, nil
+			return errorResponse(err.Error(), 1), nil
 		}
 		resp.Success = true
 		d.publishSnapshot()
 		return resp, nil
 	default:
-		resp.Error = fmt.Sprintf("unknown daemon action %q", req.Action)
-		resp.ExitCode = 2
-		return resp, nil
+		return errorResponse(fmt.Sprintf("unknown daemon action %q", req.Action), 2), nil
 	}
 }
 
@@ -107,29 +105,21 @@ func (d *Dispatcher) handleOrbit(ctx context.Context, req ipc.Request) (ipc.Resp
 	resp := ipc.NewResponse(false)
 	svc := d.state.OrbitService()
 	if svc == nil {
-		resp.Error = "orbit service unavailable"
-		resp.ExitCode = 1
-		return resp, nil
+		return errorResponse("orbit service unavailable", 1), nil
 	}
 
 	switch req.Action {
 	case "get":
 		name, err := svc.Current(ctx)
 		if err != nil {
-			resp.Error = err.Error()
-			resp.ExitCode = 1
-			return resp, nil
+			return errorResponse(err.Error(), 1), nil
 		}
 		record, err := svc.Record(ctx, name)
 		if err != nil {
-			resp.Error = err.Error()
-			resp.ExitCode = 1
-			return resp, nil
+			return errorResponse(err.Error(), 1), nil
 		}
 		if err := ipc.AssignData(&resp, record); err != nil {
-			resp.Error = err.Error()
-			resp.ExitCode = 1
-			return resp, nil
+			return errorResponse(err.Error(), 1), nil
 		}
 		return resp, nil
 	case "next":
@@ -139,57 +129,39 @@ func (d *Dispatcher) handleOrbit(ctx context.Context, req ipc.Request) (ipc.Resp
 	case "list":
 		summaries, err := d.state.OrbitSummaries(ctx)
 		if err != nil {
-			resp.Error = err.Error()
-			resp.ExitCode = 1
-			return resp, nil
+			return errorResponse(err.Error(), 1), nil
 		}
 		if err := ipc.AssignData(&resp, summaries); err != nil {
-			resp.Error = err.Error()
-			resp.ExitCode = 1
-			return resp, nil
+			return errorResponse(err.Error(), 1), nil
 		}
 		return resp, nil
 	case "set":
 		if len(req.Args) != 1 {
-			resp.Error = "orbit set requires exactly one argument"
-			resp.ExitCode = 2
-			return resp, nil
+			return errorResponse("orbit set requires exactly one argument", 2), nil
 		}
 		target := req.Args[0]
 		record, err := svc.Record(ctx, target)
 		if err != nil {
-			resp.Error = err.Error()
-			resp.ExitCode = 2
-			return resp, nil
+			return errorResponse(err.Error(), 2), nil
 		}
 		if err := svc.Set(ctx, target); err != nil {
-			resp.Error = err.Error()
-			resp.ExitCode = 1
-			return resp, nil
+			return errorResponse(err.Error(), 1), nil
 		}
 		primaryWorkspace, err := d.jumpToActiveModuleWorkspace(ctx)
 		if err != nil {
-			resp.Error = err.Error()
-			resp.ExitCode = 1
-			return resp, nil
+			return errorResponse(err.Error(), 1), nil
 		}
 		if err := d.alignMonitorsToOrbit(ctx, target, primaryWorkspace); err != nil {
-			resp.Error = err.Error()
-			resp.ExitCode = 1
-			return resp, nil
+			return errorResponse(err.Error(), 1), nil
 		}
 		d.state.InvalidateClients()
 		if err := ipc.AssignData(&resp, record); err != nil {
-			resp.Error = err.Error()
-			resp.ExitCode = 1
-			return resp, nil
+			return errorResponse(err.Error(), 1), nil
 		}
 		d.publishSnapshot()
 		return resp, nil
 	default:
-		resp.Error = fmt.Sprintf("unknown orbit action %q", req.Action)
-		resp.ExitCode = 2
-		return resp, nil
+		return errorResponse(fmt.Sprintf("unknown orbit action %q", req.Action), 2), nil
 	}
 }
 
@@ -197,26 +169,18 @@ func (d *Dispatcher) handleOrbitStep(ctx context.Context, svc *orbit.Service, de
 	resp := ipc.NewResponse(false)
 	seq, err := svc.Sequence(ctx)
 	if err != nil {
-		resp.Error = err.Error()
-		resp.ExitCode = 1
-		return resp, nil
+		return errorResponse(err.Error(), 1), nil
 	}
 	if len(seq) == 0 {
-		resp.Error = "orbit: no orbits configured"
-		resp.ExitCode = 1
-		return resp, nil
+		return errorResponse("orbit: no orbits configured", 1), nil
 	}
 	current, err := svc.Current(ctx)
 	if err != nil {
-		resp.Error = err.Error()
-		resp.ExitCode = 1
-		return resp, nil
+		return errorResponse(err.Error(), 1), nil
 	}
 	idx := util.IndexOf(seq, current)
 	if idx == -1 {
-		resp.Error = fmt.Sprintf("orbit: current orbit %q not found", current)
-		resp.ExitCode = 1
-		return resp, nil
+		return errorResponse(fmt.Sprintf("orbit: current orbit %q not found", current), 1), nil
 	}
 	var nextIdx int
 	if delta > 0 {
@@ -229,32 +193,22 @@ func (d *Dispatcher) handleOrbitStep(ctx context.Context, svc *orbit.Service, de
 	}
 	name := seq[nextIdx]
 	if err := svc.Set(ctx, name); err != nil {
-		resp.Error = err.Error()
-		resp.ExitCode = 1
-		return resp, nil
+		return errorResponse(err.Error(), 1), nil
 	}
 	primaryWorkspace, err := d.jumpToActiveModuleWorkspace(ctx)
 	if err != nil {
-		resp.Error = err.Error()
-		resp.ExitCode = 1
-		return resp, nil
+		return errorResponse(err.Error(), 1), nil
 	}
 	if err := d.alignMonitorsToOrbit(ctx, name, primaryWorkspace); err != nil {
-		resp.Error = err.Error()
-		resp.ExitCode = 1
-		return resp, nil
+		return errorResponse(err.Error(), 1), nil
 	}
 	d.state.InvalidateClients()
 	record, err := svc.Record(ctx, name)
 	if err != nil {
-		resp.Error = err.Error()
-		resp.ExitCode = 1
-		return resp, nil
+		return errorResponse(err.Error(), 1), nil
 	}
 	if err := ipc.AssignData(&resp, record); err != nil {
-		resp.Error = err.Error()
-		resp.ExitCode = 1
-		return resp, nil
+		return errorResponse(err.Error(), 1), nil
 	}
 	d.publishSnapshot()
 	return resp, nil
@@ -264,30 +218,22 @@ func (d *Dispatcher) handleModule(ctx context.Context, req ipc.Request) (ipc.Res
 	resp := ipc.NewResponse(false)
 	svc := d.state.ModuleService()
 	if svc == nil {
-		resp.Error = "module service unavailable"
-		resp.ExitCode = 1
-		return resp, nil, nil
+		return errorResponse("module service unavailable", 1), nil, nil
 	}
 
 	switch req.Action {
 	case "list":
 		filter, err := moduleListFilterFromFlags(req.Flags)
 		if err != nil {
-			resp.Error = err.Error()
-			resp.ExitCode = 2
-			return resp, nil, nil
+			return errorResponse(err.Error(), 2), nil, nil
 		}
 		summaries, err := svc.WorkspaceSummaries(ctx)
 		if err != nil {
-			resp.Error = err.Error()
-			resp.ExitCode = 1
-			return resp, nil, nil
+			return errorResponse(err.Error(), 1), nil, nil
 		}
 		filtered := filterWorkspaceSummaries(summaries, filter)
 		if err := ipc.AssignData(&resp, filtered); err != nil {
-			resp.Error = err.Error()
-			resp.ExitCode = 1
-			return resp, nil, nil
+			return errorResponse(err.Error(), 1), nil, nil
 		}
 		return resp, nil, nil
 	case "status-stream":
@@ -296,18 +242,14 @@ func (d *Dispatcher) handleModule(ctx context.Context, req ipc.Request) (ipc.Res
 		return resp, d.streamModuleStatus(), nil
 	case "workspace-reset":
 		if err := d.resetWorkspaces(ctx); err != nil {
-			resp.Error = err.Error()
-			resp.ExitCode = 1
-			return resp, nil, nil
+			return errorResponse(err.Error(), 1), nil, nil
 		}
 		resp.Success = true
 		d.publishSnapshot()
 		return resp, nil, nil
 	case "workspace-align":
 		if err := d.alignWorkspace(ctx); err != nil {
-			resp.Error = err.Error()
-			resp.ExitCode = 1
-			return resp, nil, nil
+			return errorResponse(err.Error(), 1), nil, nil
 		}
 		resp.Success = true
 		d.publishSnapshot()
@@ -323,9 +265,7 @@ func (d *Dispatcher) handleModule(ctx context.Context, req ipc.Request) (ipc.Res
 	}
 
 	if len(req.Args) == 0 {
-		resp.Error = "module command requires a module name"
-		resp.ExitCode = 2
-		return resp, nil, nil
+		return errorResponse("module command requires a module name", 2), nil, nil
 	}
 	moduleName := req.Args[0]
 
@@ -344,32 +284,22 @@ func (d *Dispatcher) handleModule(ctx context.Context, req ipc.Request) (ipc.Res
 		if _, ok := svc.Module(moduleName); ok {
 			result, err = svc.Jump(ctx, moduleName)
 			if err != nil {
-				resp.Error = err.Error()
-				resp.ExitCode = 1
-				return resp, nil, nil
+				return errorResponse(err.Error(), 1), nil, nil
 			}
 		} else {
 			if hypr == nil {
-				resp.Error = "hyprctl client unavailable"
-				resp.ExitCode = 1
-				return resp, nil, nil
+				return errorResponse("hyprctl client unavailable", 1), nil, nil
 			}
 			record, err := svc.ActiveOrbit(ctx)
 			if err != nil {
-				resp.Error = err.Error()
-				resp.ExitCode = 1
-				return resp, nil, nil
+				return errorResponse(err.Error(), 1), nil, nil
 			}
 			if record == nil {
-				resp.Error = "active orbit not available"
-				resp.ExitCode = 1
-				return resp, nil, nil
+				return errorResponse("active orbit not available", 1), nil, nil
 			}
 			workspace := module.WorkspaceName(moduleName, record.Name)
 			if err := hypr.SwitchWorkspace(ctx, workspace); err != nil {
-				resp.Error = err.Error()
-				resp.ExitCode = 1
-				return resp, nil, nil
+				return errorResponse(err.Error(), 1), nil, nil
 			}
 			d.state.registerTempModule(record.Name, moduleName)
 			result = &module.Result{Action: "jumped", Workspace: workspace, Orbit: record.Name}
@@ -380,9 +310,7 @@ func (d *Dispatcher) handleModule(ctx context.Context, req ipc.Request) (ipc.Res
 		}
 
 		if err := ipc.AssignData(&resp, result); err != nil {
-			resp.Error = err.Error()
-			resp.ExitCode = 1
-			return resp, nil, nil
+			return errorResponse(err.Error(), 1), nil, nil
 		}
 		d.recordModuleResult(result)
 		d.publishSnapshot()
@@ -390,29 +318,21 @@ func (d *Dispatcher) handleModule(ctx context.Context, req ipc.Request) (ipc.Res
 	}
 	if _, ok := svc.Module(moduleName); !ok {
 		available := strings.Join(svc.ModuleNames(), ", ")
-		resp.Error = fmt.Sprintf("module %q not configured (available: %s)", moduleName, available)
-		resp.ExitCode = 2
-		return resp, nil, nil
+		return errorResponse(fmt.Sprintf("module %q not configured (available: %s)", moduleName, available), 2), nil, nil
 	}
 
 	switch req.Action {
 	case "focus":
 		opts, err := focusOptionsFromFlags(req.Flags)
 		if err != nil {
-			resp.Error = err.Error()
-			resp.ExitCode = 2
-			return resp, nil, nil
+			return errorResponse(err.Error(), 2), nil, nil
 		}
 		result, err := svc.Focus(ctx, moduleName, opts)
 		if err != nil {
-			resp.Error = err.Error()
-			resp.ExitCode = 1
-			return resp, nil, nil
+			return errorResponse(err.Error(), 1), nil, nil
 		}
 		if err := ipc.AssignData(&resp, result); err != nil {
-			resp.Error = err.Error()
-			resp.ExitCode = 1
-			return resp, nil, nil
+			return errorResponse(err.Error(), 1), nil, nil
 		}
 		d.recordModuleResult(result)
 		d.publishSnapshot()
@@ -420,23 +340,17 @@ func (d *Dispatcher) handleModule(ctx context.Context, req ipc.Request) (ipc.Res
 	case "seed":
 		results, err := svc.Seed(ctx, moduleName)
 		if err != nil {
-			resp.Error = err.Error()
-			resp.ExitCode = 1
-			return resp, nil, nil
+			return errorResponse(err.Error(), 1), nil, nil
 		}
 		if results == nil {
 			results = []*module.Result{}
 		}
 		if err := ipc.AssignData(&resp, results); err != nil {
-			resp.Error = err.Error()
-			resp.ExitCode = 1
-			return resp, nil, nil
+			return errorResponse(err.Error(), 1), nil, nil
 		}
 		return resp, nil, nil
 	default:
-		resp.Error = fmt.Sprintf("unknown module action %q", req.Action)
-		resp.ExitCode = 2
-		return resp, nil, nil
+		return errorResponse(fmt.Sprintf("unknown module action %q", req.Action), 2), nil, nil
 	}
 }
 
@@ -444,42 +358,30 @@ func (d *Dispatcher) handleModuleStep(ctx context.Context, svc *module.Service, 
 	resp := ipc.NewResponse(false)
 
 	if delta == 0 {
-		resp.Error = "module step: delta cannot be zero"
-		resp.ExitCode = 2
-		return resp, nil, nil
+		return errorResponse("module step: delta cannot be zero", 2), nil, nil
 	}
 
 	hypr := d.state.HyprctlClient()
 	if hypr == nil {
-		resp.Error = "hyprctl client unavailable"
-		resp.ExitCode = 1
-		return resp, nil, nil
+		return errorResponse("hyprctl client unavailable", 1), nil, nil
 	}
 
 	ws, err := hypr.ActiveWorkspace(ctx)
 	if err != nil {
-		resp.Error = err.Error()
-		resp.ExitCode = 1
-		return resp, nil, nil
+		return errorResponse(err.Error(), 1), nil, nil
 	}
 	if ws == nil {
-		resp.Error = "active workspace not available"
-		resp.ExitCode = 1
-		return resp, nil, nil
+		return errorResponse("active workspace not available", 1), nil, nil
 	}
 
 	name := strings.TrimSpace(ws.Name)
 	if name == "" {
-		resp.Error = "active workspace name is empty"
-		resp.ExitCode = 1
-		return resp, nil, nil
+		return errorResponse("active workspace name is empty", 1), nil, nil
 	}
 
 	moduleName, orbitName, err := module.ParseWorkspaceName(name)
 	if err != nil {
-		resp.Error = fmt.Sprintf("active workspace %q is not a module workspace", name)
-		resp.ExitCode = 1
-		return resp, nil, nil
+		return errorResponse(fmt.Sprintf("active workspace %q is not a module workspace", name), 1), nil, nil
 	}
 	originTemp := d.state.IsTemporaryWorkspace(name)
 	if _, ok := svc.Module(moduleName); !ok {
@@ -492,9 +394,7 @@ func (d *Dispatcher) handleModuleStep(ctx context.Context, svc *module.Service, 
 		names = util.MergeStrings(names, tempNames)
 	}
 	if len(names) == 0 {
-		resp.Error = "no modules configured"
-		resp.ExitCode = 1
-		return resp, nil, nil
+		return errorResponse("no modules configured", 1), nil, nil
 	}
 
 	idx := util.IndexOf(names, moduleName)
@@ -515,31 +415,23 @@ func (d *Dispatcher) handleModuleStep(ctx context.Context, svc *module.Service, 
 	if _, ok := svc.Module(target); ok {
 		result, err = svc.Jump(ctx, target)
 		if err != nil {
-			resp.Error = err.Error()
-			resp.ExitCode = 1
-			return resp, nil, nil
+			return errorResponse(err.Error(), 1), nil, nil
 		}
 	} else if workspace, ok := d.state.tempModuleWorkspace(orbitName, target); ok {
 		if err := hypr.SwitchWorkspace(ctx, workspace); err != nil {
-			resp.Error = err.Error()
-			resp.ExitCode = 1
-			return resp, nil, nil
+			return errorResponse(err.Error(), 1), nil, nil
 		}
 		result = &module.Result{Action: "jumped", Workspace: workspace, Orbit: orbitName}
 	} else {
 		workspace := module.WorkspaceName(target, orbitName)
 		if err := hypr.SwitchWorkspace(ctx, workspace); err != nil {
-			resp.Error = err.Error()
-			resp.ExitCode = 1
-			return resp, nil, nil
+			return errorResponse(err.Error(), 1), nil, nil
 		}
 		result = &module.Result{Action: "jumped", Workspace: workspace, Orbit: orbitName}
 	}
 
 	if err := ipc.AssignData(&resp, result); err != nil {
-		resp.Error = err.Error()
-		resp.ExitCode = 1
-		return resp, nil, nil
+		return errorResponse(err.Error(), 1), nil, nil
 	}
 
 	d.recordModuleResult(result)
@@ -555,22 +447,16 @@ func (d *Dispatcher) handleModuleCreate(ctx context.Context, svc *module.Service
 
 	hypr := d.state.HyprctlClient()
 	if hypr == nil {
-		resp.Error = "hyprctl client unavailable"
-		resp.ExitCode = 1
-		return resp, nil, nil
+		return errorResponse("hyprctl client unavailable", 1), nil, nil
 	}
 
 	result, err := d.createModuleWorkspace(ctx, svc, hypr, "")
 	if err != nil {
-		resp.Error = err.Error()
-		resp.ExitCode = 1
-		return resp, nil, nil
+		return errorResponse(err.Error(), 1), nil, nil
 	}
 
 	if err := ipc.AssignData(&resp, result); err != nil {
-		resp.Error = err.Error()
-		resp.ExitCode = 1
-		return resp, nil, nil
+		return errorResponse(err.Error(), 1), nil, nil
 	}
 
 	d.recordModuleResult(result)
@@ -644,14 +530,11 @@ func (d *Dispatcher) createModuleWorkspace(ctx context.Context, svc *module.Serv
 }
 
 func (d *Dispatcher) handleWindow(ctx context.Context, req ipc.Request) (ipc.Response, StreamHandler, error) {
-	resp := ipc.NewResponse(false)
 	switch req.Action {
 	case "move":
 		return d.handleWindowMove(ctx, req)
 	default:
-		resp.Error = fmt.Sprintf("unknown window action %q", req.Action)
-		resp.ExitCode = 2
-		return resp, nil, nil
+		return errorResponse(fmt.Sprintf("unknown window action %q", req.Action), 2), nil, nil
 	}
 }
 
@@ -659,9 +542,7 @@ func (d *Dispatcher) handleWindowMove(ctx context.Context, req ipc.Request) (ipc
 	resp := ipc.NewResponse(false)
 
 	if len(req.Args) != 2 {
-		resp.Error = "window move requires a window reference and target"
-		resp.ExitCode = 2
-		return resp, nil, nil
+		return errorResponse("window move requires a window reference and target", 2), nil, nil
 	}
 
 	windowRef := strings.TrimSpace(req.Args[0])
@@ -672,9 +553,7 @@ func (d *Dispatcher) handleWindowMove(ctx context.Context, req ipc.Request) (ipc
 		if raw, ok := req.Flags["silent"]; ok {
 			val, err := util.ToBool(raw)
 			if err != nil {
-				resp.Error = fmt.Sprintf("window move silent flag: %v", err)
-				resp.ExitCode = 2
-				return resp, nil, nil
+				return errorResponse(fmt.Sprintf("window move silent flag: %v", err), 2), nil, nil
 			}
 			silent = val
 		}
@@ -682,9 +561,7 @@ func (d *Dispatcher) handleWindowMove(ctx context.Context, req ipc.Request) (ipc
 
 	hypr := d.state.HyprctlClient()
 	if hypr == nil {
-		resp.Error = "hyprctl client unavailable"
-		resp.ExitCode = 1
-		return resp, nil, nil
+		return errorResponse("hyprctl client unavailable", 1), nil, nil
 	}
 
 	modSvc := d.state.ModuleService()
@@ -695,26 +572,18 @@ func (d *Dispatcher) handleWindowMove(ctx context.Context, req ipc.Request) (ipc
 
 	clients, err := d.resolveWindowSelection(ctx, hypr, orbitProvider, windowRef)
 	if err != nil {
-		resp.Error = err.Error()
-		resp.ExitCode = 1
-		return resp, nil, nil
+		return errorResponse(err.Error(), 1), nil, nil
 	}
 	if len(clients) == 0 {
-		resp.Error = fmt.Sprintf("window selector %q matched no windows", windowRef)
-		resp.ExitCode = 1
-		return resp, nil, nil
+		return errorResponse(fmt.Sprintf("window selector %q matched no windows", windowRef), 1), nil, nil
 	}
 
 	if !strings.HasPrefix(strings.ToLower(targetRef), "module:") {
-		resp.Error = fmt.Sprintf("window move: unsupported target %q", targetRef)
-		resp.ExitCode = 2
-		return resp, nil, nil
+		return errorResponse(fmt.Sprintf("window move: unsupported target %q", targetRef), 2), nil, nil
 	}
 
 	if modSvc == nil {
-		resp.Error = "module service unavailable"
-		resp.ExitCode = 1
-		return resp, nil, nil
+		return errorResponse("module service unavailable", 1), nil, nil
 	}
 
 	results := make([]windowMoveResult, 0, len(clients))
@@ -722,9 +591,7 @@ func (d *Dispatcher) handleWindowMove(ctx context.Context, req ipc.Request) (ipc
 		focus := !silent && idx == len(clients)-1
 		res, err := d.moveClientToModule(ctx, modSvc, hypr, client, targetRef, focus)
 		if err != nil {
-			resp.Error = err.Error()
-			resp.ExitCode = 1
-			return resp, nil, nil
+			return errorResponse(err.Error(), 1), nil, nil
 		}
 		results = append(results, res)
 	}
@@ -737,9 +604,7 @@ func (d *Dispatcher) handleWindowMove(ctx context.Context, req ipc.Request) (ipc
 	}
 
 	if err := ipc.AssignData(&resp, payload); err != nil {
-		resp.Error = err.Error()
-		resp.ExitCode = 1
-		return resp, nil, nil
+		return errorResponse(err.Error(), 1), nil, nil
 	}
 
 	d.publishSnapshot()
@@ -851,9 +716,7 @@ func (d *Dispatcher) handleModuleGet(ctx context.Context) ipc.Response {
 	resp := ipc.NewResponse(false)
 	svc := d.state.ModuleService()
 	if svc == nil {
-		resp.Error = "module service unavailable"
-		resp.ExitCode = 1
-		return resp
+		return errorResponse("module service unavailable", 1)
 	}
 
 	hyprClient := d.state.HyprctlClient()
@@ -861,41 +724,29 @@ func (d *Dispatcher) handleModuleGet(ctx context.Context) ipc.Response {
 		ActiveWorkspace(context.Context) (*hyprctl.Workspace, error)
 	})
 	if !ok || activeGetter == nil {
-		resp.Error = "hyprctl client does not expose active workspace"
-		resp.ExitCode = 1
-		return resp
+		return errorResponse("hyprctl client does not expose active workspace", 1)
 	}
 
 	ws, err := activeGetter.ActiveWorkspace(ctx)
 	if err != nil {
-		resp.Error = err.Error()
-		resp.ExitCode = 1
-		return resp
+		return errorResponse(err.Error(), 1)
 	}
 	if ws == nil || ws.Name == "" {
-		resp.Error = "active workspace not available"
-		resp.ExitCode = 1
-		return resp
+		return errorResponse("active workspace not available", 1)
 	}
 
 	moduleName, orbitName, err := module.ParseWorkspaceName(ws.Name)
 	if err != nil {
-		resp.Error = err.Error()
-		resp.ExitCode = 2
-		return resp
+		return errorResponse(err.Error(), 2)
 	}
 
 	status, err := svc.Status(ctx, moduleName, orbitName)
 	if err != nil {
-		resp.Error = err.Error()
-		resp.ExitCode = 2
-		return resp
+		return errorResponse(err.Error(), 2)
 	}
 
 	if err := ipc.AssignData(&resp, status); err != nil {
-		resp.Error = err.Error()
-		resp.ExitCode = 1
-		return resp
+		return errorResponse(err.Error(), 1)
 	}
 	return resp
 }
