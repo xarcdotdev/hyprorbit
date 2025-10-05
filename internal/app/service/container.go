@@ -370,7 +370,8 @@ func (s *DaemonState) recordWorkspaceActivation(workspace string) {
 	s.recordActiveModule(moduleName, orbitName)
 }
 
-func (s *DaemonState) registerTempModule(orbitName, moduleName string) {
+// RegisterTempModule registers a temporary module for an orbit.
+func (s *DaemonState) RegisterTempModule(orbitName, moduleName string) {
 	orbitName = strings.TrimSpace(orbitName)
 	moduleName = strings.TrimSpace(moduleName)
 	if orbitName == "" || moduleName == "" {
@@ -392,7 +393,8 @@ func (s *DaemonState) registerTempModule(orbitName, moduleName string) {
 	s.tempModules[orbitName] = list
 }
 
-func (s *DaemonState) unregisterTempModule(orbitName, moduleName string) {
+// UnregisterTempModule removes a temporary module from an orbit.
+func (s *DaemonState) UnregisterTempModule(orbitName, moduleName string) {
 	orbitName = strings.TrimSpace(orbitName)
 	moduleName = strings.TrimSpace(moduleName)
 	if orbitName == "" || moduleName == "" {
@@ -443,7 +445,8 @@ func (s *DaemonState) TempModuleNames(orbitName string) []string {
 	return append([]string(nil), list...)
 }
 
-func (s *DaemonState) tempModuleWorkspace(orbitName, moduleName string) (string, bool) {
+// TempModuleWorkspace returns the workspace for a temporary module if it exists.
+func (s *DaemonState) TempModuleWorkspace(orbitName, moduleName string) (string, bool) {
 	orbitName = strings.TrimSpace(orbitName)
 	moduleName = strings.TrimSpace(moduleName)
 	if orbitName == "" || moduleName == "" {
@@ -469,6 +472,7 @@ func (s *DaemonState) clearTempModules() {
 	s.tempModules = make(map[string][]string)
 }
 
+// IsTemporaryWorkspace checks if a workspace is a temporary workspace.
 func (s *DaemonState) IsTemporaryWorkspace(workspace string) bool {
 	workspace = strings.TrimSpace(workspace)
 	if workspace == "" {
@@ -478,7 +482,7 @@ func (s *DaemonState) IsTemporaryWorkspace(workspace string) bool {
 	if err != nil {
 		return false
 	}
-	_, ok := s.tempModuleWorkspace(orbitName, moduleName)
+	_, ok := s.TempModuleWorkspace(orbitName, moduleName)
 	return ok
 }
 

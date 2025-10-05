@@ -44,7 +44,6 @@ type moduleTarget struct {
 	Temporary bool
 }
 
-
 // StreamHandler streams data back to a client over an established IPC connection.
 type StreamHandler func(ctx context.Context, conn net.Conn) error
 
@@ -391,7 +390,7 @@ func (d *Dispatcher) handleModuleJump(ctx context.Context, svc *module.Service, 
 		if err := hypr.SwitchWorkspace(ctx, workspace); err != nil {
 			return errorResponse(err.Error(), 1), nil, nil
 		}
-		d.state.registerTempModule(record.Name, moduleName)
+		d.state.RegisterTempModule(record.Name, moduleName)
 		result = &module.Result{Action: "jumped", Workspace: workspace, Orbit: record.Name}
 	}
 
@@ -425,7 +424,7 @@ func (d *Dispatcher) handleModuleStep(ctx context.Context, svc *module.Service, 
 	}
 	originTemp := d.state.IsTemporaryWorkspace(name)
 	if _, ok := svc.Module(moduleName); !ok {
-		d.state.registerTempModule(orbitName, moduleName)
+		d.state.RegisterTempModule(orbitName, moduleName)
 	}
 
 	names := d.allModuleNamesForOrbit(svc, orbitName)
@@ -440,7 +439,7 @@ func (d *Dispatcher) handleModuleStep(ctx context.Context, svc *module.Service, 
 		if err != nil {
 			return errorResponse(err.Error(), 1), nil, nil
 		}
-	} else if workspace, ok := d.state.tempModuleWorkspace(orbitName, target); ok {
+	} else if workspace, ok := d.state.TempModuleWorkspace(orbitName, target); ok {
 		if err := hypr.SwitchWorkspace(ctx, workspace); err != nil {
 			return errorResponse(err.Error(), 1), nil, nil
 		}
@@ -493,52 +492,12 @@ func (d *Dispatcher) createModuleWorkspace(ctx context.Context, svc *module.Serv
 	}
 	orbitName := strings.TrimSpace(record.Name)
 
-	workspaces, err := hypr.Workspaces(ctx)
+	result, err := workspace.CreateTemporary(ctx, hypr, d.state, orbitName, origin)
 	if err != nil {
 		return nil, err
 	}
 
-	existing := make(map[string]struct{}, len(workspaces))
-	for _, ws := range workspaces {
-		name := strings.TrimSpace(ws.Name)
-		if name == "" {
-			continue
-		}
-		existing[name] = struct{}{}
-	}
-
-	const maxTemporaryWorkspace = 99
-	var target string
-	for i := 1; i <= maxTemporaryWorkspace; i++ {
-		candidate := fmt.Sprintf("%d-%s", i, orbitName)
-		if _, ok := existing[candidate]; ok {
-			continue
-		}
-		target = candidate
-		break
-	}
-
-	if target == "" {
-		return nil, fmt.Errorf("no temporary workspace slots available")
-	}
-
-	if err := hypr.SwitchWorkspace(ctx, target); err != nil {
-		return nil, err
-	}
-
-	origin = strings.TrimSpace(origin)
-	if origin != "" && origin != target {
-		if err := hypr.SwitchWorkspace(ctx, origin); err != nil {
-			return nil, err
-		}
-	}
-
-	moduleName, _, err := module.ParseWorkspaceName(target)
-	if err == nil {
-		d.state.registerTempModule(orbitName, moduleName)
-	}
-
-	return &module.Result{Action: "created", Workspace: target, Orbit: orbitName}, nil
+	return &module.Result{Action: "created", Workspace: result.Workspace, Orbit: result.Orbit}, nil
 }
 
 func (d *Dispatcher) handleWindow(ctx context.Context, req ipc.Request) (ipc.Response, StreamHandler, error) {
@@ -1115,7 +1074,7 @@ func (d *Dispatcher) resolveModuleTarget(ctx context.Context, svc *module.Servic
 		if moduleName, orbit, err := module.ParseWorkspaceName(res.Workspace); err == nil {
 			target.Module = moduleName
 			target.Temporary = true
-			d.state.registerTempModule(orbit, moduleName)
+			d.state.RegisterTempModule(orbit, moduleName)
 		}
 		return target, nil
 	}
@@ -1139,7 +1098,7 @@ func (d *Dispatcher) resolveModuleTarget(ctx context.Context, svc *module.Servic
 		return target, err
 	}
 	if _, ok := svc.Module(moduleName); !ok {
-		d.state.registerTempModule(orbitName, moduleName)
+		d.state.RegisterTempModule(orbitName, moduleName)
 		target.Temporary = true
 	}
 
@@ -1250,41 +1209,7 @@ func (d *Dispatcher) collectClients(ctx context.Context) []hyprctl.ClientInfo {
 }
 
 func (d *Dispatcher) cleanupTemporaryWorkspace(ctx context.Context, hypr runtime.HyprctlClient, targetWorkspace string) {
-	targetWorkspace = strings.TrimSpace(targetWorkspace)
-	if targetWorkspace == "" || hypr == nil {
-		return
+	if workspace.CleanupTemporary(ctx, hypr, d.state, targetWorkspace) {
+		d.state.InvalidateClients()
 	}
-	if !d.state.IsTemporaryWorkspace(targetWorkspace) {
-		return
-	}
-	moduleName, orbitName, err := module.ParseWorkspaceName(targetWorkspace)
-	if err != nil {
-		return
-	}
-	if regWorkspace, ok := d.state.tempModuleWorkspace(orbitName, moduleName); !ok || regWorkspace != targetWorkspace {
-		return
-	}
-
-	if wsName, err := workspace.ActiveName(ctx, hypr); err == nil {
-		if wsName == targetWorkspace {
-			return
-		}
-	}
-
-	count, err := workspace.WindowCount(ctx, hypr, targetWorkspace)
-	if err != nil {
-		d.state.Logf("temp workspace cleanup %s: %v", targetWorkspace, err)
-		return
-	}
-	if count > 0 {
-		return
-	}
-
-	if err := hypr.Dispatch(ctx, "dispatch", "killworkspace", "name:"+targetWorkspace); err != nil {
-		d.state.Logf("temp workspace kill %s: %v", targetWorkspace, err)
-		return
-	}
-	d.state.unregisterTempModule(orbitName, moduleName)
-	d.state.InvalidateClients()
-	d.state.Logf("removed temporary workspace %s", targetWorkspace)
 }
