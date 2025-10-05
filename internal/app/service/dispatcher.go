@@ -289,47 +289,9 @@ func (d *Dispatcher) handleModule(ctx context.Context, req ipc.Request) (ipc.Res
 	moduleName := req.Args[0]
 
 	if req.Action == "jump" {
-		hypr := d.state.HyprctlClient()
-		originWorkspace := ""
-		originWasTemp := false
-		if hypr != nil {
-			if ws, err := hypr.ActiveWorkspace(ctx); err == nil && ws != nil {
-				originWorkspace = strings.TrimSpace(ws.Name)
-				originWasTemp = d.state.IsTemporaryWorkspace(originWorkspace)
-			}
-		}
-		var result *module.Result
-		var err error
-		if _, ok := svc.Module(moduleName); ok {
-			result, err = svc.Jump(ctx, moduleName)
-			if err != nil {
-				return errorResponse(err.Error(), 1), nil, nil
-			}
-		} else {
-			if hypr == nil {
-				return errorResponse("hyprctl client unavailable", 1), nil, nil
-			}
-			record, err := svc.ActiveOrbit(ctx)
-			if err != nil {
-				return errorResponse(err.Error(), 1), nil, nil
-			}
-			if record == nil {
-				return errorResponse("active orbit not available", 1), nil, nil
-			}
-			workspace := module.WorkspaceName(moduleName, record.Name)
-			if err := hypr.SwitchWorkspace(ctx, workspace); err != nil {
-				return errorResponse(err.Error(), 1), nil, nil
-			}
-			d.state.registerTempModule(record.Name, moduleName)
-			result = &module.Result{Action: "jumped", Workspace: workspace, Orbit: record.Name}
-		}
-
-		if originWasTemp && originWorkspace != "" && result != nil && strings.TrimSpace(result.Workspace) != originWorkspace {
-			d.cleanupTemporaryWorkspace(ctx, hypr, originWorkspace)
-		}
-
-		return d.successResponseWithModuleResult(result)
+		return d.handleModuleJump(ctx, svc, moduleName)
 	}
+
 	if _, ok := svc.Module(moduleName); !ok {
 		available := strings.Join(svc.ModuleNames(), ", ")
 		return errorResponse(fmt.Sprintf("module %q not configured (available: %s)", moduleName, available), 2), nil, nil
@@ -358,6 +320,49 @@ func (d *Dispatcher) handleModule(ctx context.Context, req ipc.Request) (ipc.Res
 	default:
 		return errorResponse(fmt.Sprintf("unknown module action %q", req.Action), 2), nil, nil
 	}
+}
+
+func (d *Dispatcher) handleModuleJump(ctx context.Context, svc *module.Service, moduleName string) (ipc.Response, StreamHandler, error) {
+	hypr := d.state.HyprctlClient()
+	originWorkspace := ""
+	originWasTemp := false
+	if hypr != nil {
+		if ws, err := hypr.ActiveWorkspace(ctx); err == nil && ws != nil {
+			originWorkspace = strings.TrimSpace(ws.Name)
+			originWasTemp = d.state.IsTemporaryWorkspace(originWorkspace)
+		}
+	}
+	var result *module.Result
+	var err error
+	if _, ok := svc.Module(moduleName); ok {
+		result, err = svc.Jump(ctx, moduleName)
+		if err != nil {
+			return errorResponse(err.Error(), 1), nil, nil
+		}
+	} else {
+		if hypr == nil {
+			return errorResponse("hyprctl client unavailable", 1), nil, nil
+		}
+		record, err := svc.ActiveOrbit(ctx)
+		if err != nil {
+			return errorResponse(err.Error(), 1), nil, nil
+		}
+		if record == nil {
+			return errorResponse("active orbit not available", 1), nil, nil
+		}
+		workspace := module.WorkspaceName(moduleName, record.Name)
+		if err := hypr.SwitchWorkspace(ctx, workspace); err != nil {
+			return errorResponse(err.Error(), 1), nil, nil
+		}
+		d.state.registerTempModule(record.Name, moduleName)
+		result = &module.Result{Action: "jumped", Workspace: workspace, Orbit: record.Name}
+	}
+
+	if originWasTemp && originWorkspace != "" && result != nil && strings.TrimSpace(result.Workspace) != originWorkspace {
+		d.cleanupTemporaryWorkspace(ctx, hypr, originWorkspace)
+	}
+
+	return d.successResponseWithModuleResult(result)
 }
 
 func (d *Dispatcher) handleModuleStep(ctx context.Context, svc *module.Service, delta int) (ipc.Response, StreamHandler, error) {
