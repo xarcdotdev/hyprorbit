@@ -1,11 +1,17 @@
 package window
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 
 	"hyprorbit/internal/hyprctl"
+	"hyprorbit/internal/orbit"
 	"hyprorbit/internal/regex"
+	"hyprorbit/internal/runtime"
+	"hyprorbit/internal/workspace"
 )
 
 // SanitizeClient trims client metadata for stable comparisons.
@@ -154,4 +160,107 @@ func ClientInfoFromWindow(win *hyprctl.Window) hyprctl.ClientInfo {
 		},
 	}
 	return SanitizeClient(info)
+}
+
+// DecodeClients retrieves all client info from hyprctl.
+func DecodeClients(ctx context.Context, hypr runtime.HyprctlClient) ([]hyprctl.ClientInfo, error) {
+	var clients []hyprctl.ClientInfo
+	if err := hypr.DecodeClients(ctx, &clients); err != nil {
+		return nil, err
+	}
+	return clients, nil
+}
+
+// ResolveSelection resolves window references and returns matching clients.
+// Supports: "current", "workspace", and scoped regex references like "orbit:class:firefox".
+func ResolveSelection(ctx context.Context, hypr runtime.HyprctlClient, orbitProvider orbit.Provider, ref string) ([]hyprctl.ClientInfo, error) {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return nil, fmt.Errorf("window reference cannot be empty")
+	}
+	lower := strings.ToLower(ref)
+	switch {
+	case lower == "current":
+		win, err := hypr.ActiveWindow(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if win == nil {
+			return nil, nil
+		}
+		client := ClientInfoFromWindow(win)
+		if client.Address == "" {
+			return nil, nil
+		}
+		return []hyprctl.ClientInfo{client}, nil
+	case lower == "workspace":
+		workspaceName, err := workspace.ActiveName(ctx, hypr)
+		if err != nil {
+			return nil, err
+		}
+		clients, err := DecodeClients(ctx, hypr)
+		if err != nil {
+			return nil, err
+		}
+		return FilterByScope(clients, ScopeWorkspace, workspaceName, ""), nil
+	default:
+		reference, isRegex, err := ParseReference(ref)
+		if err != nil {
+			switch {
+			case errors.Is(err, regex.ErrEmptyPattern):
+				return nil, fmt.Errorf("window regex reference requires a pattern")
+			case errors.Is(err, regex.ErrEmptyQualifier):
+				return nil, fmt.Errorf("window regex reference requires a field before the pattern")
+			case errors.Is(err, regex.ErrEmptySelector):
+				return nil, fmt.Errorf("window regex reference requires a pattern")
+			default:
+				return nil, err
+			}
+		}
+		if !isRegex {
+			return nil, fmt.Errorf("window reference %q not supported", ref)
+		}
+		selector := reference.Selector
+		if selector.Pattern == "" {
+			return nil, fmt.Errorf("window regex reference requires a pattern")
+		}
+		re, err := regexp.Compile(selector.Pattern)
+		if err != nil {
+			return nil, fmt.Errorf("window regex %q invalid: %w", selector.Pattern, err)
+		}
+
+		clients, err := DecodeClients(ctx, hypr)
+		if err != nil {
+			return nil, err
+		}
+
+		var workspaceName string
+		if reference.Scope == ScopeWorkspace || reference.Scope == ScopeOrbit {
+			workspaceName, err = workspace.ActiveName(ctx, hypr)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		var orbitName string
+		if reference.Scope == ScopeOrbit {
+			orbitName, err = orbit.ActiveName(ctx, orbitProvider)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		scoped := FilterByScope(clients, reference.Scope, workspaceName, orbitName)
+		if len(scoped) == 0 {
+			return scoped, nil
+		}
+
+		matched := make([]hyprctl.ClientInfo, 0, len(scoped))
+		for _, client := range scoped {
+			if MatchClient(re, selector, client) {
+				matched = append(matched, client)
+			}
+		}
+		return matched, nil
+	}
 }
