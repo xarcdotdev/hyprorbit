@@ -70,6 +70,16 @@ func (d *Dispatcher) requireOrbitService() (*orbit.Service, error) {
 	return svc, nil
 }
 
+// allModuleNamesForOrbit returns all module names (configured + temporary) for the given orbit.
+func (d *Dispatcher) allModuleNamesForOrbit(svc *module.Service, orbitName string) []string {
+	names := svc.ModuleNames()
+	tempNames := d.state.TempModuleNames(orbitName)
+	if len(tempNames) > 0 {
+		names = util.MergeStrings(names, tempNames)
+	}
+	return names
+}
+
 // requireModuleService returns the module service or an error if unavailable.
 func (d *Dispatcher) requireModuleService() (*module.Service, error) {
 	svc := d.state.ModuleService()
@@ -418,11 +428,7 @@ func (d *Dispatcher) handleModuleStep(ctx context.Context, svc *module.Service, 
 		d.state.registerTempModule(orbitName, moduleName)
 	}
 
-	names := svc.ModuleNames()
-	tempNames := d.state.TempModuleNames(orbitName)
-	if len(tempNames) > 0 {
-		names = util.MergeStrings(names, tempNames)
-	}
+	names := d.allModuleNamesForOrbit(svc, orbitName)
 	if len(names) == 0 {
 		return errorResponse("no modules configured", 1), nil, nil
 	}
@@ -1123,11 +1129,7 @@ func (d *Dispatcher) resolveModuleTarget(ctx context.Context, svc *module.Servic
 	}
 	orbitName := strings.TrimSpace(record.Name)
 
-	names := svc.ModuleNames()
-	tempNames := d.state.TempModuleNames(orbitName)
-	if len(tempNames) > 0 {
-		names = util.MergeStrings(names, tempNames)
-	}
+	names := d.allModuleNamesForOrbit(svc, orbitName)
 	if len(names) == 0 {
 		return target, fmt.Errorf("no modules configured")
 	}
