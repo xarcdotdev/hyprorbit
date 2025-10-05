@@ -84,6 +84,22 @@ func (d *Dispatcher) successResponseWithModuleResult(result *module.Result) (ipc
 	return resp, nil, nil
 }
 
+// getActiveWorkspaceName retrieves and validates the active workspace name.
+func getActiveWorkspaceName(ctx context.Context, hypr runtime.HyprctlClient) (string, error) {
+	ws, err := hypr.ActiveWorkspace(ctx)
+	if err != nil {
+		return "", err
+	}
+	if ws == nil {
+		return "", fmt.Errorf("active workspace not available")
+	}
+	name := strings.TrimSpace(ws.Name)
+	if name == "" {
+		return "", fmt.Errorf("active workspace name is empty")
+	}
+	return name, nil
+}
+
 // Handle executes the request, returning a response suitable for IPC clients and an optional stream handler.
 func (d *Dispatcher) Handle(ctx context.Context, req ipc.Request) (ipc.Response, StreamHandler, error) {
 	if req.Version != ipc.Version {
@@ -327,8 +343,8 @@ func (d *Dispatcher) handleModuleJump(ctx context.Context, svc *module.Service, 
 	originWorkspace := ""
 	originWasTemp := false
 	if hypr != nil {
-		if ws, err := hypr.ActiveWorkspace(ctx); err == nil && ws != nil {
-			originWorkspace = strings.TrimSpace(ws.Name)
+		if name, err := getActiveWorkspaceName(ctx, hypr); err == nil {
+			originWorkspace = name
 			originWasTemp = d.state.IsTemporaryWorkspace(originWorkspace)
 		}
 	}
@@ -377,17 +393,9 @@ func (d *Dispatcher) handleModuleStep(ctx context.Context, svc *module.Service, 
 		return errorResponse("hyprctl client unavailable", 1), nil, nil
 	}
 
-	ws, err := hypr.ActiveWorkspace(ctx)
+	name, err := getActiveWorkspaceName(ctx, hypr)
 	if err != nil {
 		return errorResponse(err.Error(), 1), nil, nil
-	}
-	if ws == nil {
-		return errorResponse("active workspace not available", 1), nil, nil
-	}
-
-	name := strings.TrimSpace(ws.Name)
-	if name == "" {
-		return errorResponse("active workspace name is empty", 1), nil, nil
 	}
 
 	moduleName, orbitName, err := module.ParseWorkspaceName(name)
@@ -466,7 +474,7 @@ func (d *Dispatcher) createModuleWorkspace(ctx context.Context, svc *module.Serv
 	if err != nil {
 		return nil, err
 	}
-	if record == nil || strings.TrimSpace(record.Name) == "" {
+	if record == nil || util.IsEmptyOrWhitespace(record.Name) {
 		return nil, fmt.Errorf("active orbit not available")
 	}
 	orbitName := strings.TrimSpace(record.Name)
@@ -714,7 +722,7 @@ func (d *Dispatcher) handleModuleGet(ctx context.Context) ipc.Response {
 	if err != nil {
 		return errorResponse(err.Error(), 1)
 	}
-	if ws == nil || ws.Name == "" {
+	if ws == nil || util.IsEmptyOrWhitespace(ws.Name) {
 		return errorResponse("active workspace not available", 1)
 	}
 
@@ -941,18 +949,10 @@ func (d *Dispatcher) jumpToActiveModuleWorkspace(ctx context.Context) (string, e
 		orbitName = strings.TrimSpace(activeOrbit.Name)
 	}
 
-	ws, err := hypr.ActiveWorkspace(ctx)
-	if err != nil {
-		return "", err
-	}
-
 	var currentModule string
-	if ws != nil {
-		name := strings.TrimSpace(ws.Name)
-		if name != "" {
-			if moduleName, _, err := module.ParseWorkspaceName(name); err == nil {
-				currentModule = moduleName
-			}
+	if name, err := getActiveWorkspaceName(ctx, hypr); err == nil {
+		if moduleName, _, err := module.ParseWorkspaceName(name); err == nil {
+			currentModule = moduleName
 		}
 	}
 
@@ -1112,7 +1112,7 @@ func (d *Dispatcher) resolveModuleTarget(ctx context.Context, svc *module.Servic
 	if err != nil {
 		return target, err
 	}
-	if record == nil || strings.TrimSpace(record.Name) == "" {
+	if record == nil || util.IsEmptyOrWhitespace(record.Name) {
 		return target, fmt.Errorf("active orbit not available")
 	}
 	orbitName := strings.TrimSpace(record.Name)
@@ -1207,12 +1207,9 @@ func (d *Dispatcher) selectModuleName(names []string, current, spec string) (str
 func (d *Dispatcher) currentModuleForOrbit(ctx context.Context, hypr runtime.HyprctlClient, orbitName string) string {
 	orbitName = strings.TrimSpace(orbitName)
 	if hypr != nil {
-		if ws, err := hypr.ActiveWorkspace(ctx); err == nil && ws != nil {
-			name := strings.TrimSpace(ws.Name)
-			if name != "" {
-				if moduleName, orbit, err := module.ParseWorkspaceName(name); err == nil && orbit == orbitName {
-					return moduleName
-				}
+		if name, err := getActiveWorkspaceName(ctx, hypr); err == nil {
+			if moduleName, orbit, err := module.ParseWorkspaceName(name); err == nil && orbit == orbitName {
+				return moduleName
 			}
 		}
 	}
@@ -1305,8 +1302,8 @@ func (d *Dispatcher) cleanupTemporaryWorkspace(ctx context.Context, hypr runtime
 		return
 	}
 
-	if ws, err := hypr.ActiveWorkspace(ctx); err == nil && ws != nil {
-		if strings.TrimSpace(ws.Name) == targetWorkspace {
+	if wsName, err := getActiveWorkspaceName(ctx, hypr); err == nil {
+		if wsName == targetWorkspace {
 			return
 		}
 	}
