@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -32,6 +33,15 @@ type windowMoveResult struct {
 	Created   bool   `json:"created,omitempty"`
 	Temporary bool   `json:"temporary,omitempty"`
 	Focused   bool   `json:"focused"`
+}
+
+type windowMoveListEntry struct {
+	Address   string `json:"address"`
+	Class     string `json:"class,omitempty"`
+	Title     string `json:"title,omitempty"`
+	Workspace string `json:"workspace,omitempty"`
+	Module    string `json:"module,omitempty"`
+	Orbit     string `json:"orbit,omitempty"`
 }
 
 type moduleTarget struct {
@@ -502,9 +512,80 @@ func (d *Dispatcher) handleWindow(ctx context.Context, req ipc.Request) (ipc.Res
 	switch req.Action {
 	case "move":
 		return d.handleWindowMove(ctx, req)
+	case "list":
+		return d.handleWindowList(ctx, req)
 	default:
 		return errorResponse(fmt.Sprintf("unknown window action %q", req.Action), 2), nil, nil
 	}
+}
+
+func (d *Dispatcher) handleWindowList(ctx context.Context, req ipc.Request) (ipc.Response, StreamHandler, error) {
+	if len(req.Args) > 0 {
+		return errorResponse("window list does not accept arguments", 2), nil, nil
+	}
+
+	hypr, err := d.requireHyprctlClient()
+	if err != nil {
+		return errorResponse(err.Error(), 1), nil, nil
+	}
+
+	clients, err := window.DecodeClients(ctx, hypr)
+	if err != nil {
+		return errorResponse(err.Error(), 1), nil, nil
+	}
+
+	summaries := make([]windowMoveListEntry, 0, len(clients))
+	for _, client := range clients {
+		sanitized := window.SanitizeClient(client)
+		workspaceName := sanitized.WorkspaceName()
+		moduleName := ""
+		orbitName := ""
+		if workspaceName != "" {
+			if m, o, err := module.ParseWorkspaceName(workspaceName); err == nil {
+				moduleName = m
+				orbitName = o
+			}
+		}
+
+		summary := windowMoveListEntry{
+			Address:   sanitized.Address,
+			Class:     sanitized.Class,
+			Title:     sanitized.Title,
+			Workspace: workspaceName,
+		}
+		if moduleName != "" {
+			summary.Module = moduleName
+		}
+		if orbitName != "" {
+			summary.Orbit = orbitName
+		}
+		summaries = append(summaries, summary)
+	}
+
+	sort.Slice(summaries, func(i, j int) bool {
+		a := summaries[i]
+		b := summaries[j]
+		if a.Workspace != b.Workspace {
+			return a.Workspace < b.Workspace
+		}
+		if a.Module != b.Module {
+			return a.Module < b.Module
+		}
+		if a.Orbit != b.Orbit {
+			return a.Orbit < b.Orbit
+		}
+		return a.Address < b.Address
+	})
+
+	if len(summaries) == 0 {
+		summaries = []windowMoveListEntry{}
+	}
+
+	resp := ipc.NewResponse(false)
+	if err := ipc.AssignData(&resp, summaries); err != nil {
+		return errorResponse(err.Error(), 1), nil, nil
+	}
+	return resp, nil, nil
 }
 
 func (d *Dispatcher) handleWindowMove(ctx context.Context, req ipc.Request) (ipc.Response, StreamHandler, error) {
@@ -593,7 +674,6 @@ func formatMoveResults(results []windowMoveResult) any {
 	}
 	return results
 }
-
 
 func (d *Dispatcher) handleModuleGet(ctx context.Context) ipc.Response {
 	resp := ipc.NewResponse(false)

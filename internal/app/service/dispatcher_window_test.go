@@ -2,11 +2,13 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"regexp"
 	"testing"
 
 	"hyprorbit/internal/hyprctl"
+	"hyprorbit/internal/ipc"
 	"hyprorbit/internal/orbit"
 	"hyprorbit/internal/regex"
 	"hyprorbit/internal/runtime"
@@ -24,12 +26,11 @@ func TestResolveWindowSelection_RegexFieldMatching(t *testing.T) {
 		},
 	}
 
-	d := &Dispatcher{}
 	orbitProv := fakeOrbitProvider{name: "alpha"}
 
-	clients, err := d.resolveWindowSelection(ctx, hypr, nil, "class:thunderbird")
+	clients, err := window.ResolveSelection(ctx, hypr, nil, "class:thunderbird")
 	if err != nil {
-		t.Fatalf("resolveWindowSelection returned error: %v", err)
+		t.Fatalf("ResolveSelection returned error: %v", err)
 	}
 	if len(clients) != 1 {
 		t.Fatalf("expected 1 client, got %d", len(clients))
@@ -38,9 +39,9 @@ func TestResolveWindowSelection_RegexFieldMatching(t *testing.T) {
 		t.Fatalf("expected thunderbird class, got %q", clients[0].Class)
 	}
 
-	clients, err = d.resolveWindowSelection(ctx, hypr, nil, "title:Thunderbird")
+	clients, err = window.ResolveSelection(ctx, hypr, nil, "title:Thunderbird")
 	if err != nil {
-		t.Fatalf("resolveWindowSelection returned error: %v", err)
+		t.Fatalf("ResolveSelection returned error: %v", err)
 	}
 	if len(clients) != 1 {
 		t.Fatalf("expected 1 client, got %d", len(clients))
@@ -49,23 +50,23 @@ func TestResolveWindowSelection_RegexFieldMatching(t *testing.T) {
 		t.Fatalf("unexpected title match %q", clients[0].Title)
 	}
 
-	clients, err = d.resolveWindowSelection(ctx, hypr, nil, "tag:mail")
+	clients, err = window.ResolveSelection(ctx, hypr, nil, "tag:mail")
 	if err != nil {
-		t.Fatalf("resolveWindowSelection returned error: %v", err)
+		t.Fatalf("ResolveSelection returned error: %v", err)
 	}
 	if len(clients) != 1 {
 		t.Fatalf("expected 1 client for tag match, got %d", len(clients))
 	}
 
-	clients, err = d.resolveWindowSelection(ctx, hypr, nil, "regex:mail")
+	clients, err = window.ResolveSelection(ctx, hypr, nil, "regex:mail")
 	if err != nil {
-		t.Fatalf("resolveWindowSelection returned error: %v", err)
+		t.Fatalf("ResolveSelection returned error: %v", err)
 	}
 	if len(clients) != 0 {
 		t.Fatalf("expected 0 clients for unqualified tag match, got %d", len(clients))
 	}
 
-	clients, err = d.resolveWindowSelection(ctx, hypr, nil, "regex:class:thunderbird")
+	clients, err = window.ResolveSelection(ctx, hypr, nil, "regex:class:thunderbird")
 	if err != nil {
 		t.Fatalf("legacy regex prefix should still work, got error: %v", err)
 	}
@@ -73,7 +74,7 @@ func TestResolveWindowSelection_RegexFieldMatching(t *testing.T) {
 		t.Fatalf("expected 1 client for legacy syntax, got %d", len(clients))
 	}
 
-	clients, err = d.resolveWindowSelection(ctx, hypr, orbitProv, "orbit:class:foot")
+	clients, err = window.ResolveSelection(ctx, hypr, orbitProv, "orbit:class:foot")
 	if err != nil {
 		t.Fatalf("orbit scoped selection returned error: %v", err)
 	}
@@ -81,12 +82,69 @@ func TestResolveWindowSelection_RegexFieldMatching(t *testing.T) {
 		t.Fatalf("expected orbit scope to return foot client, got %+v", clients)
 	}
 
-	clients, err = d.resolveWindowSelection(ctx, hypr, orbitProv, "global:class:mpv")
+	clients, err = window.ResolveSelection(ctx, hypr, orbitProv, "global:class:mpv")
 	if err != nil {
 		t.Fatalf("global scoped selection returned error: %v", err)
 	}
 	if len(clients) != 1 || clients[0].Class != "mpv" {
 		t.Fatalf("expected global scope to return mpv client, got %+v", clients)
+	}
+}
+
+func TestHandleWindowMoveList(t *testing.T) {
+	ctx := context.Background()
+	hypr := &fakeHyprClient{
+		clients: []hyprctl.ClientInfo{
+			{Address: "0xabc", Class: "foot", Title: " Terminal ", Workspace: hyprctl.WorkspaceHandle{Name: "code-alpha"}},
+			{Address: "0xdef", Class: "firefox", Title: "Firefox", Workspace: hyprctl.WorkspaceHandle{Name: "web-beta"}},
+			{Address: "0xghi", Class: "spotify", Title: "", Workspace: hyprctl.WorkspaceHandle{Name: "special:music"}},
+		},
+	}
+
+	d := &Dispatcher{state: &DaemonState{hyprctl: hypr}}
+	req := ipc.NewRequest("window", "list")
+
+	resp, _, err := d.handleWindow(ctx, req)
+	if err != nil {
+		t.Fatalf("handleWindow returned error: %v", err)
+	}
+	if !resp.Success {
+		t.Fatalf("expected success response, got %+v", resp)
+	}
+	if len(resp.Data) == 0 {
+		t.Fatalf("expected response data, got none")
+	}
+
+	var entries []windowMoveListEntry
+	if err := json.Unmarshal(resp.Data, &entries); err != nil {
+		t.Fatalf("decode entries: %v", err)
+	}
+	if len(entries) != 3 {
+		t.Fatalf("expected 3 entries, got %d", len(entries))
+	}
+
+	first := entries[0]
+	if first.Workspace != "code-alpha" || first.Module != "code" || first.Orbit != "alpha" {
+		t.Fatalf("first entry mismatch: %+v", first)
+	}
+	if first.Title != "Terminal" {
+		t.Fatalf("expected sanitized title, got %q", first.Title)
+	}
+
+	second := entries[1]
+	if second.Workspace != "special:music" {
+		t.Fatalf("expected second workspace special:music, got %q", second.Workspace)
+	}
+	if second.Module != "" || second.Orbit != "" {
+		t.Fatalf("expected no module/orbit for special workspace, got %+v", second)
+	}
+
+	third := entries[2]
+	if third.Workspace != "web-beta" || third.Module != "web" || third.Orbit != "beta" {
+		t.Fatalf("third entry mismatch: %+v", third)
+	}
+	if third.Address != "0xdef" {
+		t.Fatalf("expected address 0xdef, got %q", third.Address)
 	}
 }
 

@@ -13,6 +13,7 @@ func newWindowCommand() *cobra.Command {
 	}
 
 	windowCmd.AddCommand(newWindowMoveCommand())
+	windowCmd.AddCommand(newWindowListCommand())
 
 	return windowCmd
 }
@@ -41,4 +42,24 @@ func newWindowMoveCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&silent, "silent", false, "Do not focus the target workspace after moving the window")
 
 	return cmd
+}
+
+func newWindowListCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "list",
+		Short: "List windows with their module and orbit assignments",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, err := ctl.FromContext(cmd.Context())
+			if err != nil {
+				return err
+			}
+
+			windows, err := client.WindowMoveList(cmd.Context())
+			if err != nil {
+				return err
+			}
+			return ctl.PrintWindowList(cmd.OutOrStdout(), client.Options(), windows)
+		},
+	}
 }

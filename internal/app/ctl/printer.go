@@ -219,6 +219,76 @@ func PrintWindowMoves(w io.Writer, opts Options, results []WindowMoveResult) err
 	return nil
 }
 
+const (
+	// Limits keep the table readable while JSON output remains full-length.
+	windowListMaxClass = 40
+	windowListMaxTitle = 70
+)
+
+// PrintWindowList renders window metadata in a tabular view.
+func PrintWindowList(w io.Writer, opts Options, windows []WindowSummary) error {
+	if opts.Quiet {
+		return nil
+	}
+	if opts.JSON {
+		if windows == nil {
+			windows = []WindowSummary{}
+		}
+		return encodeJSON(w, windows)
+	}
+	headers := []string{"WORKSPACE", "MODULE", "ORBIT", "ADDRESS", "CLASS", "TITLE"}
+	rows := make([][]string, len(windows))
+	widths := make([]int, len(headers))
+	for i, header := range headers {
+		widths[i] = runeLen(header)
+	}
+
+	for i, window := range windows {
+		workspace := dashIfEmpty(window.Workspace)
+		module := dashIfEmpty(window.Module)
+		orbit := dashIfEmpty(window.Orbit)
+		address := dashIfEmpty(window.Address)
+		class := dashIfEmpty(window.Class)
+		title := dashIfEmpty(window.Title)
+		if class != "-" {
+			class = truncateMiddle(class, windowListMaxClass)
+		}
+		if title != "-" {
+			title = truncateMiddle(title, windowListMaxTitle)
+		}
+
+		row := []string{workspace, module, orbit, address, class, title}
+		rows[i] = row
+		for col, value := range row {
+			if l := runeLen(value); l > widths[col] {
+				widths[col] = l
+			}
+		}
+	}
+
+	reset := colorOrEmpty(opts, ansiReset)
+	if err := printTableRow(w, headers, widths, nil, reset, false); err != nil {
+		return err
+	}
+
+	for _, row := range rows {
+		colors := make([]string, len(row))
+		if row[1] != "-" {
+			colors[1] = colorOrEmpty(opts, ansiCyan)
+		}
+		if row[2] != "-" {
+			colors[2] = colorOrEmpty(opts, ansiCyan)
+		}
+		if row[3] != "-" {
+			colors[3] = colorOrEmpty(opts, ansiGrey)
+		}
+		if err := printTableRow(w, row, widths, colors, reset, false); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // PrintOrbitSummaries emits orbit information with runtime status details.
 func PrintOrbitSummaries(w io.Writer, opts Options, summaries []orbit.Summary) error {
 	if opts.Quiet {
@@ -346,4 +416,21 @@ func colorOrEmpty(opts Options, code string) string {
 		return ""
 	}
 	return code
+}
+
+func truncateMiddle(value string, limit int) string {
+	if limit <= 0 {
+		return ""
+	}
+	runes := []rune(value)
+	if len(runes) <= limit {
+		return value
+	}
+	if limit <= 3 {
+		return string(runes[:limit])
+	}
+	keep := limit - 3
+	head := keep / 2
+	tail := keep - head
+	return string(runes[:head]) + "..." + string(runes[len(runes)-tail:])
 }

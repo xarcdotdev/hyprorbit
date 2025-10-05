@@ -48,6 +48,16 @@ type WindowMoveResult struct {
 	Focused   bool   `json:"focused"`
 }
 
+// WindowSummary captures metadata about a Hyprland window relevant to move operations.
+type WindowSummary struct {
+	Address   string `json:"address"`
+	Class     string `json:"class,omitempty"`
+	Title     string `json:"title,omitempty"`
+	Workspace string `json:"workspace,omitempty"`
+	Module    string `json:"module,omitempty"`
+	Orbit     string `json:"orbit,omitempty"`
+}
+
 func (s *streamReadCloser) Close() error {
 	var err error
 	s.once.Do(func() {
@@ -183,6 +193,19 @@ func (c *Client) WindowMove(ctx context.Context, windowRef, targetRef string, si
 		return nil, err
 	}
 	return []WindowMoveResult{result}, nil
+}
+
+// WindowMoveList fetches current window metadata for move operations.
+func (c *Client) WindowMoveList(ctx context.Context) ([]WindowSummary, error) {
+	req := ipc.NewRequest("window", "list")
+	var summaries []WindowSummary
+	if _, err := c.Call(ctx, req, &summaries); err != nil {
+		return nil, err
+	}
+	if summaries == nil {
+		summaries = []WindowSummary{}
+	}
+	return summaries, nil
 }
 
 // ModuleFocusOptions customises the module focus request.
