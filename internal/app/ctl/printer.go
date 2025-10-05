@@ -177,39 +177,46 @@ func PrintWorkspaceSummaries(w io.Writer, opts Options, summaries []module.Works
 	return nil
 }
 
-// PrintWindowMove renders the result of a window move operation.
-func PrintWindowMove(w io.Writer, opts Options, result *WindowMoveResult) error {
+// PrintWindowMoves renders window move results, handling single or batched responses.
+func PrintWindowMoves(w io.Writer, opts Options, results []WindowMoveResult) error {
 	if opts.Quiet {
 		return nil
 	}
 	if opts.JSON {
-		return encodeJSON(w, result)
+		if len(results) == 1 {
+			return encodeJSON(w, &results[0])
+		}
+		return encodeJSON(w, results)
 	}
-	if result == nil {
+	if len(results) == 0 {
 		return fmt.Errorf("window: nothing to print")
 	}
-	parts := []string{dashIfEmpty(result.Window), dashIfEmpty(result.Workspace)}
-	if result.Module != "" {
-		parts = append(parts, result.Module)
+	for _, result := range results {
+		parts := []string{dashIfEmpty(result.Window), dashIfEmpty(result.Workspace)}
+		if result.Module != "" {
+			parts = append(parts, result.Module)
+		}
+		if result.Orbit != "" {
+			parts = append(parts, result.Orbit)
+		}
+		annotations := make([]string, 0, 2)
+		if result.Created {
+			annotations = append(annotations, "created")
+		}
+		if result.Focused {
+			annotations = append(annotations, "focused")
+		}
+		if result.Temporary {
+			annotations = append(annotations, "temp")
+		}
+		if len(annotations) > 0 {
+			parts = append(parts, "["+strings.Join(annotations, ", ")+"]")
+		}
+		if _, err := fmt.Fprintln(w, strings.Join(parts, "\t")); err != nil {
+			return err
+		}
 	}
-	if result.Orbit != "" {
-		parts = append(parts, result.Orbit)
-	}
-	annotations := make([]string, 0, 2)
-	if result.Created {
-		annotations = append(annotations, "created")
-	}
-	if result.Focused {
-		annotations = append(annotations, "focused")
-	}
-	if result.Temporary {
-		annotations = append(annotations, "temp")
-	}
-	if len(annotations) > 0 {
-		parts = append(parts, "["+strings.Join(annotations, ", ")+"]")
-	}
-	_, err := fmt.Fprintln(w, strings.Join(parts, "\t"))
-	return err
+	return nil
 }
 
 // PrintOrbitSummaries emits orbit information with runtime status details.

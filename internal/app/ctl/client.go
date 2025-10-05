@@ -1,6 +1,7 @@
 package ctl
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -158,15 +159,30 @@ func (c *Client) OrbitList(ctx context.Context) ([]orbit.Summary, error) {
 }
 
 // WindowMove relocates a window to the requested target.
-func (c *Client) WindowMove(ctx context.Context, windowRef, targetRef string, silent bool) (*WindowMoveResult, error) {
+func (c *Client) WindowMove(ctx context.Context, windowRef, targetRef string, silent bool) ([]WindowMoveResult, error) {
 	req := ipc.NewRequest("window", "move")
 	req.Args = []string{windowRef, targetRef}
 	req.Flags = map[string]any{"silent": silent}
-	var res WindowMoveResult
-	if _, err := c.Call(ctx, req, &res); err != nil {
+	var raw json.RawMessage
+	if _, err := c.Call(ctx, req, &raw); err != nil {
 		return nil, err
 	}
-	return &res, nil
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 {
+		return []WindowMoveResult{}, nil
+	}
+	if trimmed[0] == '[' {
+		var results []WindowMoveResult
+		if err := json.Unmarshal(trimmed, &results); err != nil {
+			return nil, err
+		}
+		return results, nil
+	}
+	var result WindowMoveResult
+	if err := json.Unmarshal(trimmed, &result); err != nil {
+		return nil, err
+	}
+	return []WindowMoveResult{result}, nil
 }
 
 // ModuleFocusOptions customises the module focus request.

@@ -677,15 +677,21 @@ func (d *Dispatcher) handleWindowMove(ctx context.Context, req ipc.Request) (ipc
 		return resp, nil, nil
 	}
 
-	window, err := d.resolveWindowReference(ctx, hypr, windowRef)
+	clients, err := d.resolveWindowSelection(ctx, hypr, windowRef)
 	if err != nil {
 		resp.Error = err.Error()
 		resp.ExitCode = 1
 		return resp, nil, nil
 	}
-	if window == nil {
-		resp.Error = fmt.Sprintf("window %q not found", windowRef)
+	if len(clients) == 0 {
+		resp.Error = fmt.Sprintf("window selector %q matched no windows", windowRef)
 		resp.ExitCode = 1
+		return resp, nil, nil
+	}
+
+	if !strings.HasPrefix(strings.ToLower(targetRef), "module:") {
+		resp.Error = fmt.Sprintf("window move: unsupported target %q", targetRef)
+		resp.ExitCode = 2
 		return resp, nil, nil
 	}
 
@@ -696,24 +702,26 @@ func (d *Dispatcher) handleWindowMove(ctx context.Context, req ipc.Request) (ipc
 		return resp, nil, nil
 	}
 
-	var result windowMoveResult
-	switch {
-	case strings.HasPrefix(targetRef, "module:"):
-		res, err := d.moveWindowToModule(ctx, modSvc, hypr, window, targetRef, silent)
+	results := make([]windowMoveResult, 0, len(clients))
+	for idx, client := range clients {
+		focus := !silent && idx == len(clients)-1
+		res, err := d.moveClientToModule(ctx, modSvc, hypr, client, targetRef, focus)
 		if err != nil {
 			resp.Error = err.Error()
 			resp.ExitCode = 1
 			return resp, nil, nil
 		}
-		res.Window = windowRef
-		result = res
-	default:
-		resp.Error = fmt.Sprintf("window move: unsupported target %q", targetRef)
-		resp.ExitCode = 2
-		return resp, nil, nil
+		results = append(results, res)
 	}
 
-	if err := assignData(&resp, result); err != nil {
+	var payload any
+	if len(results) == 1 {
+		payload = results[0]
+	} else {
+		payload = results
+	}
+
+	if err := assignData(&resp, payload); err != nil {
 		resp.Error = err.Error()
 		resp.ExitCode = 1
 		return resp, nil, nil
@@ -721,6 +729,150 @@ func (d *Dispatcher) handleWindowMove(ctx context.Context, req ipc.Request) (ipc
 
 	d.publishSnapshot()
 	return resp, nil, nil
+}
+
+func (d *Dispatcher) resolveWindowSelection(ctx context.Context, hypr runtime.HyprctlClient, ref string) ([]hyprctl.ClientInfo, error) {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return nil, fmt.Errorf("window reference cannot be empty")
+	}
+	lower := strings.ToLower(ref)
+	switch {
+	case lower == "current":
+		win, err := hypr.ActiveWindow(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if win == nil {
+			return nil, nil
+		}
+		client := clientInfoFromWindow(win)
+		if client.Address == "" {
+			return nil, nil
+		}
+		return []hyprctl.ClientInfo{client}, nil
+	case lower == "workspace":
+		return d.clientsMatchingActiveWorkspace(ctx, hypr, nil)
+	default:
+		if pattern, ok := parseRegexReference(ref); ok {
+			if pattern == "" {
+				return nil, fmt.Errorf("window regex reference requires a pattern")
+			}
+			re, err := regexp.Compile(pattern)
+			if err != nil {
+				return nil, fmt.Errorf("window regex %q invalid: %w", pattern, err)
+			}
+			return d.clientsMatchingActiveWorkspace(ctx, hypr, re)
+		}
+	}
+	return nil, fmt.Errorf("window reference %q not supported", ref)
+}
+
+func (d *Dispatcher) clientsMatchingActiveWorkspace(ctx context.Context, hypr runtime.HyprctlClient, filter *regexp.Regexp) ([]hyprctl.ClientInfo, error) {
+	ws, err := hypr.ActiveWorkspace(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if ws == nil {
+		return nil, fmt.Errorf("active workspace not available")
+	}
+	workspaceName := strings.TrimSpace(ws.Name)
+	if workspaceName == "" {
+		return nil, fmt.Errorf("active workspace name unavailable")
+	}
+
+	var clients []hyprctl.ClientInfo
+	if err := hypr.DecodeClients(ctx, &clients); err != nil {
+		return nil, err
+	}
+
+	matched := make([]hyprctl.ClientInfo, 0, len(clients))
+	for _, client := range clients {
+		sanitized := sanitizeClientInfo(client)
+		if sanitized.Workspace.Name != workspaceName {
+			continue
+		}
+		if filter != nil && !matchesClient(filter, sanitized) {
+			continue
+		}
+		matched = append(matched, sanitized)
+	}
+	return matched, nil
+}
+
+func sanitizeClientInfo(client hyprctl.ClientInfo) hyprctl.ClientInfo {
+	client.Address = strings.TrimSpace(client.Address)
+	client.Class = strings.TrimSpace(client.Class)
+	client.Title = strings.TrimSpace(client.Title)
+	client.InitialClass = strings.TrimSpace(client.InitialClass)
+	client.InitialTitle = strings.TrimSpace(client.InitialTitle)
+	client.Workspace.Name = strings.TrimSpace(client.Workspace.Name)
+	return client
+}
+
+func matchesClient(re *regexp.Regexp, client hyprctl.ClientInfo) bool {
+	if re == nil {
+		return true
+	}
+	fields := []string{client.Title, client.Class, client.InitialTitle, client.InitialClass}
+	for _, field := range fields {
+		if field != "" && re.MatchString(field) {
+			return true
+		}
+	}
+	return false
+}
+
+func describeClient(client hyprctl.ClientInfo) string {
+	title := strings.TrimSpace(client.Title)
+	class := strings.TrimSpace(client.Class)
+	if title != "" && class != "" {
+		return fmt.Sprintf("%s (%s)", title, class)
+	}
+	if title != "" {
+		return title
+	}
+	if class != "" {
+		return class
+	}
+	if addr := strings.TrimSpace(client.Address); addr != "" {
+		return addr
+	}
+	return "window"
+}
+
+func clientInfoFromWindow(window *hyprctl.Window) hyprctl.ClientInfo {
+	if window == nil {
+		return hyprctl.ClientInfo{}
+	}
+	return hyprctl.ClientInfo{
+		Address:      strings.TrimSpace(window.Address),
+		Class:        strings.TrimSpace(window.Class),
+		Title:        strings.TrimSpace(window.Title),
+		InitialClass: strings.TrimSpace(window.InitialClass),
+		InitialTitle: strings.TrimSpace(window.InitialTitle),
+		Floating:     bool(window.Floating),
+		Workspace: hyprctl.WorkspaceHandle{
+			Name: strings.TrimSpace(window.Workspace.Name),
+		},
+	}
+}
+
+func parseRegexReference(ref string) (string, bool) {
+	trimmed := strings.TrimSpace(ref)
+	if trimmed == "" {
+		return "", false
+	}
+	idx := strings.Index(trimmed, ":")
+	if idx <= 0 {
+		return "", false
+	}
+	prefix := strings.ToLower(trimmed[:idx])
+	if prefix != "regex" {
+		return "", false
+	}
+	pattern := strings.TrimSpace(trimmed[idx+1:])
+	return pattern, true
 }
 
 func (d *Dispatcher) handleModuleGet(ctx context.Context) ipc.Response {
@@ -1076,50 +1228,24 @@ func (d *Dispatcher) alignWorkspace(ctx context.Context) error {
 	return nil
 }
 
-func (d *Dispatcher) resolveWindowReference(ctx context.Context, hypr runtime.HyprctlClient, ref string) (*hyprctl.Window, error) {
-	ref = strings.TrimSpace(strings.ToLower(ref))
-	if ref == "" {
-		return nil, fmt.Errorf("window reference cannot be empty")
-	}
-	if ref != "current" {
-		return nil, fmt.Errorf("window reference %q not supported", ref)
-	}
-	win, err := hypr.ActiveWindow(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if win == nil {
-		return nil, nil
-	}
-	if strings.TrimSpace(win.Address) == "" {
-		return nil, fmt.Errorf("active window address unavailable")
-	}
-	return win, nil
-}
-
-func (d *Dispatcher) moveWindowToModule(ctx context.Context, svc *module.Service, hypr runtime.HyprctlClient, window *hyprctl.Window, targetRef string, silent bool) (windowMoveResult, error) {
+func (d *Dispatcher) moveClientToModule(ctx context.Context, svc *module.Service, hypr runtime.HyprctlClient, client hyprctl.ClientInfo, targetRef string, focus bool) (windowMoveResult, error) {
 	var result windowMoveResult
-	if window == nil {
+	client = sanitizeClientInfo(client)
+	if client.Address == "" {
 		return result, fmt.Errorf("window not available")
 	}
-	origin := strings.TrimSpace(window.Workspace.Name)
+	origin := client.Workspace.Name
 	originTemp := d.state.IsTemporaryWorkspace(origin)
 	target, err := d.resolveModuleTarget(ctx, svc, hypr, origin, targetRef)
 	if err != nil {
 		return result, err
 	}
 
-	client := hyprctl.ClientInfo{
-		Address:   strings.TrimSpace(window.Address),
-		Workspace: hyprctl.WorkspaceHandle{Name: origin},
-		Floating:  bool(window.Floating),
-	}
-
 	if err := d.moveClientsToWorkspace(ctx, hypr, []hyprctl.ClientInfo{client}, target.Workspace); err != nil {
 		return result, err
 	}
 
-	if !silent && strings.TrimSpace(target.Workspace) != "" {
+	if focus && strings.TrimSpace(target.Workspace) != "" {
 		if err := hypr.SwitchWorkspace(ctx, target.Workspace); err != nil {
 			return result, err
 		}
@@ -1127,12 +1253,13 @@ func (d *Dispatcher) moveWindowToModule(ctx context.Context, svc *module.Service
 
 	d.state.recordWorkspaceActivation(target.Workspace)
 
+	result.Window = describeClient(client)
 	result.Workspace = target.Workspace
 	result.Module = target.Module
 	result.Orbit = target.Orbit
 	result.Created = target.Created
 	result.Temporary = target.Temporary
-	result.Focused = !silent
+	result.Focused = focus
 	if result.Module == "" {
 		if moduleName, _, err := module.ParseWorkspaceName(target.Workspace); err == nil {
 			result.Module = moduleName

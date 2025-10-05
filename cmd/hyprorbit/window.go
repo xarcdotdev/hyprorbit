@@ -30,11 +30,11 @@ func newWindowMoveCommand() *cobra.Command {
 				return err
 			}
 
-			res, err := client.WindowMove(cmd.Context(), args[0], args[1], silent)
+			results, err := client.WindowMove(cmd.Context(), args[0], args[1], silent)
 			if err != nil {
 				return err
 			}
-			return ctl.PrintWindowMove(cmd.OutOrStdout(), client.Options(), res)
+			return ctl.PrintWindowMoves(cmd.OutOrStdout(), client.Options(), results)
 		},
 	}
 
