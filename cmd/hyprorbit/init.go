@@ -28,6 +28,8 @@ const (
 )
 
 func newInitCommand() *cobra.Command {
+	var autoStart bool
+
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "Initialize hyprorbit configuration and workspace state",
@@ -42,6 +44,10 @@ func newInitCommand() *cobra.Command {
 			}
 
 			out := cmd.OutOrStdout()
+			if autoStart {
+				return resetWorkspaces(cmd.Context(), client, out)
+			}
+
 			fmt.Fprintf(out, "\n%s✦ hyprorbit initialization ✦%s\n\n", color(ansiPrimary), color(ansiReset))
 
 			if err := promptConfigGeneration(cmd.Context(), out); err != nil {
@@ -67,6 +73,8 @@ func newInitCommand() *cobra.Command {
 			return nil
 		},
 	}
+
+	cmd.Flags().BoolVar(&autoStart, "autostart", false, "Run workspace reset without prompts or config generation")
 
 	return cmd
 }
