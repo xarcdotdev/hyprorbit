@@ -84,22 +84,6 @@ func (d *Dispatcher) successResponseWithModuleResult(result *module.Result) (ipc
 	return resp, nil, nil
 }
 
-// getActiveWorkspaceName retrieves and validates the active workspace name.
-func getActiveWorkspaceName(ctx context.Context, hypr runtime.HyprctlClient) (string, error) {
-	ws, err := hypr.ActiveWorkspace(ctx)
-	if err != nil {
-		return "", err
-	}
-	if ws == nil {
-		return "", fmt.Errorf("active workspace not available")
-	}
-	name := strings.TrimSpace(ws.Name)
-	if name == "" {
-		return "", fmt.Errorf("active workspace name is empty")
-	}
-	return name, nil
-}
-
 // Handle executes the request, returning a response suitable for IPC clients and an optional stream handler.
 func (d *Dispatcher) Handle(ctx context.Context, req ipc.Request) (ipc.Response, StreamHandler, error) {
 	if req.Version != ipc.Version {
@@ -343,7 +327,7 @@ func (d *Dispatcher) handleModuleJump(ctx context.Context, svc *module.Service, 
 	originWorkspace := ""
 	originWasTemp := false
 	if hypr != nil {
-		if name, err := getActiveWorkspaceName(ctx, hypr); err == nil {
+		if name, err := workspace.ActiveName(ctx, hypr); err == nil {
 			originWorkspace = name
 			originWasTemp = d.state.IsTemporaryWorkspace(originWorkspace)
 		}
@@ -393,7 +377,7 @@ func (d *Dispatcher) handleModuleStep(ctx context.Context, svc *module.Service, 
 		return errorResponse("hyprctl client unavailable", 1), nil, nil
 	}
 
-	name, err := getActiveWorkspaceName(ctx, hypr)
+	name, err := workspace.ActiveName(ctx, hypr)
 	if err != nil {
 		return errorResponse(err.Error(), 1), nil, nil
 	}
@@ -950,7 +934,7 @@ func (d *Dispatcher) jumpToActiveModuleWorkspace(ctx context.Context) (string, e
 	}
 
 	var currentModule string
-	if name, err := getActiveWorkspaceName(ctx, hypr); err == nil {
+	if name, err := workspace.ActiveName(ctx, hypr); err == nil {
 		if moduleName, _, err := module.ParseWorkspaceName(name); err == nil {
 			currentModule = moduleName
 		}
@@ -1207,7 +1191,7 @@ func (d *Dispatcher) selectModuleName(names []string, current, spec string) (str
 func (d *Dispatcher) currentModuleForOrbit(ctx context.Context, hypr runtime.HyprctlClient, orbitName string) string {
 	orbitName = strings.TrimSpace(orbitName)
 	if hypr != nil {
-		if name, err := getActiveWorkspaceName(ctx, hypr); err == nil {
+		if name, err := workspace.ActiveName(ctx, hypr); err == nil {
 			if moduleName, orbit, err := module.ParseWorkspaceName(name); err == nil && orbit == orbitName {
 				return moduleName
 			}
@@ -1302,7 +1286,7 @@ func (d *Dispatcher) cleanupTemporaryWorkspace(ctx context.Context, hypr runtime
 		return
 	}
 
-	if wsName, err := getActiveWorkspaceName(ctx, hypr); err == nil {
+	if wsName, err := workspace.ActiveName(ctx, hypr); err == nil {
 		if wsName == targetWorkspace {
 			return
 		}
