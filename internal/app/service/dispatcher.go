@@ -16,6 +16,7 @@ import (
 	"hyprorbit/internal/orbit"
 	"hyprorbit/internal/regex"
 	"hyprorbit/internal/runtime"
+	"hyprorbit/internal/window"
 )
 
 // Dispatcher routes IPC requests to domain handlers.
@@ -39,6 +40,10 @@ type moduleTarget struct {
 	Orbit     string
 	Created   bool
 	Temporary bool
+}
+
+type orbitProvider interface {
+	ActiveOrbit(context.Context) (*orbit.Record, error)
 }
 
 // StreamHandler streams data back to a client over an established IPC connection.
@@ -267,7 +272,7 @@ func (d *Dispatcher) handleModule(ctx context.Context, req ipc.Request) (ipc.Res
 
 	switch req.Action {
 	case "list":
-		filter, err := listFilterFromFlags(req.Flags)
+		filter, err := moduleListFilterFromFlags(req.Flags)
 		if err != nil {
 			resp.Error = err.Error()
 			resp.ExitCode = 2
@@ -679,7 +684,13 @@ func (d *Dispatcher) handleWindowMove(ctx context.Context, req ipc.Request) (ipc
 		return resp, nil, nil
 	}
 
-	clients, err := d.resolveWindowSelection(ctx, hypr, windowRef)
+	modSvc := d.state.ModuleService()
+	var orbitProvider orbitProvider
+	if modSvc != nil {
+		orbitProvider = modSvc
+	}
+
+	clients, err := d.resolveWindowSelection(ctx, hypr, orbitProvider, windowRef)
 	if err != nil {
 		resp.Error = err.Error()
 		resp.ExitCode = 1
@@ -697,7 +708,6 @@ func (d *Dispatcher) handleWindowMove(ctx context.Context, req ipc.Request) (ipc
 		return resp, nil, nil
 	}
 
-	modSvc := d.state.ModuleService()
 	if modSvc == nil {
 		resp.Error = "module service unavailable"
 		resp.ExitCode = 1
@@ -733,7 +743,7 @@ func (d *Dispatcher) handleWindowMove(ctx context.Context, req ipc.Request) (ipc
 	return resp, nil, nil
 }
 
-func (d *Dispatcher) resolveWindowSelection(ctx context.Context, hypr runtime.HyprctlClient, ref string) ([]hyprctl.ClientInfo, error) {
+func (d *Dispatcher) resolveWindowSelection(ctx context.Context, hypr runtime.HyprctlClient, orbit orbitProvider, ref string) ([]hyprctl.ClientInfo, error) {
 	ref = strings.TrimSpace(ref)
 	if ref == "" {
 		return nil, fmt.Errorf("window reference cannot be empty")
@@ -754,136 +764,117 @@ func (d *Dispatcher) resolveWindowSelection(ctx context.Context, hypr runtime.Hy
 		}
 		return []hyprctl.ClientInfo{client}, nil
 	case lower == "workspace":
-		return d.clientsMatchingActiveWorkspace(ctx, hypr, nil, regex.FieldAny)
+		workspaceName, err := activeWorkspaceName(ctx, hypr)
+		if err != nil {
+			return nil, err
+		}
+		clients, err := decodeClients(ctx, hypr)
+		if err != nil {
+			return nil, err
+		}
+		return window.FilterByScope(clients, window.ScopeWorkspace, workspaceName, ""), nil
 	default:
-		selector, isRegex, err := regex.ParseWindowSelector(ref)
+		reference, isRegex, err := window.ParseReference(ref)
 		if err != nil {
 			switch {
 			case errors.Is(err, regex.ErrEmptyPattern):
 				return nil, fmt.Errorf("window regex reference requires a pattern")
 			case errors.Is(err, regex.ErrEmptyQualifier):
 				return nil, fmt.Errorf("window regex reference requires a field before the pattern")
+			case errors.Is(err, regex.ErrEmptySelector):
+				return nil, fmt.Errorf("window regex reference requires a pattern")
 			default:
 				return nil, err
 			}
 		}
-		if isRegex {
-			if selector.Pattern == "" {
-				return nil, fmt.Errorf("window regex reference requires a pattern")
-			}
-			re, err := regexp.Compile(selector.Pattern)
-			if err != nil {
-				return nil, fmt.Errorf("window regex %q invalid: %w", selector.Pattern, err)
-			}
-			return d.clientsMatchingActiveWorkspace(ctx, hypr, re, selector.Field)
+		if !isRegex {
+			return nil, fmt.Errorf("window reference %q not supported", ref)
 		}
+		selector := reference.Selector
+		if selector.Pattern == "" {
+			return nil, fmt.Errorf("window regex reference requires a pattern")
+		}
+		re, err := regexp.Compile(selector.Pattern)
+		if err != nil {
+			return nil, fmt.Errorf("window regex %q invalid: %w", selector.Pattern, err)
+		}
+
+		clients, err := decodeClients(ctx, hypr)
+		if err != nil {
+			return nil, err
+		}
+
+		var workspaceName string
+		if reference.Scope == window.ScopeWorkspace || reference.Scope == window.ScopeOrbit {
+			workspaceName, err = activeWorkspaceName(ctx, hypr)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		var orbitName string
+		if reference.Scope == window.ScopeOrbit {
+			orbitName, err = activeOrbitName(ctx, orbit)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		scoped := window.FilterByScope(clients, reference.Scope, workspaceName, orbitName)
+		if len(scoped) == 0 {
+			return scoped, nil
+		}
+
+		matched := make([]hyprctl.ClientInfo, 0, len(scoped))
+		for _, client := range scoped {
+			if window.MatchClient(re, selector, client) {
+				matched = append(matched, client)
+			}
+		}
+		return matched, nil
 	}
 	return nil, fmt.Errorf("window reference %q not supported", ref)
 }
 
-func (d *Dispatcher) clientsMatchingActiveWorkspace(ctx context.Context, hypr runtime.HyprctlClient, filter *regexp.Regexp, field regex.Field) ([]hyprctl.ClientInfo, error) {
+func activeWorkspaceName(ctx context.Context, hypr runtime.HyprctlClient) (string, error) {
 	ws, err := hypr.ActiveWorkspace(ctx)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	if ws == nil {
-		return nil, fmt.Errorf("active workspace not available")
+		return "", fmt.Errorf("active workspace not available")
 	}
-	workspaceName := strings.TrimSpace(ws.Name)
-	if workspaceName == "" {
-		return nil, fmt.Errorf("active workspace name unavailable")
+	name := strings.TrimSpace(ws.Name)
+	if name == "" {
+		return "", fmt.Errorf("active workspace name unavailable")
 	}
+	return name, nil
+}
 
+func activeOrbitName(ctx context.Context, provider orbitProvider) (string, error) {
+	if provider == nil {
+		return "", fmt.Errorf("active orbit not available")
+	}
+	record, err := provider.ActiveOrbit(ctx)
+	if err != nil {
+		return "", err
+	}
+	if record == nil {
+		return "", fmt.Errorf("active orbit not available")
+	}
+	name := strings.TrimSpace(record.Name)
+	if name == "" {
+		return "", fmt.Errorf("active orbit not available")
+	}
+	return name, nil
+}
+
+func decodeClients(ctx context.Context, hypr runtime.HyprctlClient) ([]hyprctl.ClientInfo, error) {
 	var clients []hyprctl.ClientInfo
 	if err := hypr.DecodeClients(ctx, &clients); err != nil {
 		return nil, err
 	}
-
-	matched := make([]hyprctl.ClientInfo, 0, len(clients))
-	for _, client := range clients {
-		sanitized := sanitizeClientInfo(client)
-		if sanitized.Workspace.Name != workspaceName {
-			continue
-		}
-		if filter != nil && !matchesClient(filter, field, sanitized) {
-			continue
-		}
-		matched = append(matched, sanitized)
-	}
-	return matched, nil
-}
-
-func sanitizeClientInfo(client hyprctl.ClientInfo) hyprctl.ClientInfo {
-	client.Address = strings.TrimSpace(client.Address)
-	client.Class = strings.TrimSpace(client.Class)
-	client.Title = strings.TrimSpace(client.Title)
-	client.InitialClass = strings.TrimSpace(client.InitialClass)
-	client.InitialTitle = strings.TrimSpace(client.InitialTitle)
-	client.Workspace.Name = strings.TrimSpace(client.Workspace.Name)
-	client.Tags = hyprctl.HyprTags(sanitizeTags([]string(client.Tags)))
-	return client
-}
-
-func matchesClient(re *regexp.Regexp, field regex.Field, client hyprctl.ClientInfo) bool {
-	if re == nil {
-		return true
-	}
-	switch field {
-	case regex.FieldAddress:
-		return matchField(re, client.Address)
-	case regex.FieldClass:
-		return matchField(re, client.Class)
-	case regex.FieldTitle:
-		return matchField(re, client.Title)
-	case regex.FieldInitialClass:
-		return matchField(re, client.InitialClass)
-	case regex.FieldInitialTitle:
-		return matchField(re, client.InitialTitle)
-	case regex.FieldTag:
-		return matchTags(re, []string(client.Tags))
-	case regex.FieldWorkspace:
-		return matchField(re, client.Workspace.Name)
-	default:
-		return matchField(re, client.Title) || matchField(re, client.Class) ||
-			matchField(re, client.InitialTitle) || matchField(re, client.InitialClass)
-	}
-}
-
-func sanitizeTags(tags []string) []string {
-	if len(tags) == 0 {
-		return nil
-	}
-	clean := make([]string, 0, len(tags))
-	for _, tag := range tags {
-		trimmed := strings.TrimSpace(tag)
-		if trimmed == "" {
-			continue
-		}
-		clean = append(clean, trimmed)
-	}
-	if len(clean) == 0 {
-		return nil
-	}
-	return clean
-}
-
-func matchField(re *regexp.Regexp, value string) bool {
-	if value == "" {
-		return false
-	}
-	return re.MatchString(value)
-}
-
-func matchTags(re *regexp.Regexp, tags []string) bool {
-	if len(tags) == 0 {
-		return false
-	}
-	for _, tag := range tags {
-		if tag != "" && re.MatchString(tag) {
-			return true
-		}
-	}
-	return false
+	return clients, nil
 }
 
 func describeClient(client hyprctl.ClientInfo) string {
@@ -904,22 +895,23 @@ func describeClient(client hyprctl.ClientInfo) string {
 	return "window"
 }
 
-func clientInfoFromWindow(window *hyprctl.Window) hyprctl.ClientInfo {
-	if window == nil {
+func clientInfoFromWindow(win *hyprctl.Window) hyprctl.ClientInfo {
+	if win == nil {
 		return hyprctl.ClientInfo{}
 	}
-	return hyprctl.ClientInfo{
-		Address:      strings.TrimSpace(window.Address),
-		Class:        strings.TrimSpace(window.Class),
-		Title:        strings.TrimSpace(window.Title),
-		InitialClass: strings.TrimSpace(window.InitialClass),
-		InitialTitle: strings.TrimSpace(window.InitialTitle),
-		Floating:     bool(window.Floating),
-		Tags:         hyprctl.HyprTags(sanitizeTags([]string(window.Tags))),
+	info := hyprctl.ClientInfo{
+		Address:      win.Address,
+		Class:        win.Class,
+		Title:        win.Title,
+		InitialClass: win.InitialClass,
+		InitialTitle: win.InitialTitle,
+		Floating:     bool(win.Floating),
+		Tags:         win.Tags,
 		Workspace: hyprctl.WorkspaceHandle{
-			Name: strings.TrimSpace(window.Workspace.Name),
+			Name: win.Workspace.Name,
 		},
 	}
+	return window.SanitizeClient(info)
 }
 func (d *Dispatcher) handleModuleGet(ctx context.Context) ipc.Response {
 	resp := ipc.NewResponse(false)
@@ -1022,7 +1014,7 @@ func (d *Dispatcher) streamModuleStatus() StreamHandler {
 	}
 }
 
-func listFilterFromFlags(flags map[string]any) (string, error) {
+func moduleListFilterFromFlags(flags map[string]any) (string, error) {
 	if len(flags) == 0 {
 		return "all", nil
 	}
@@ -1276,7 +1268,7 @@ func (d *Dispatcher) alignWorkspace(ctx context.Context) error {
 
 func (d *Dispatcher) moveClientToModule(ctx context.Context, svc *module.Service, hypr runtime.HyprctlClient, client hyprctl.ClientInfo, targetRef string, focus bool) (windowMoveResult, error) {
 	var result windowMoveResult
-	client = sanitizeClientInfo(client)
+	client = window.SanitizeClient(client)
 	if client.Address == "" {
 		return result, fmt.Errorf("window not available")
 	}
