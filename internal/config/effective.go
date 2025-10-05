@@ -1,10 +1,13 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"sort"
 	"strings"
+
+	"hyprorbit/internal/regex"
 )
 
 // EffectiveConfig is the validated, runtime-ready configuration.
@@ -225,25 +228,34 @@ func BuildEffective(source string, cfg *Config) (*EffectiveConfig, error) {
 }
 
 func parseMatcher(input string) (Matcher, error) {
-	input = strings.TrimSpace(input)
-	if input == "" {
+	trimmed := strings.TrimSpace(input)
+	if trimmed == "" {
 		return Matcher{}, nil
 	}
-	field := defaultMatcherField
-	expr := input
 
-	if idx := strings.IndexRune(input, '='); idx > 0 {
-		field = strings.TrimSpace(input[:idx])
-		expr = strings.TrimSpace(input[idx+1:])
-		if field == "" {
-			return Matcher{}, fmt.Errorf("empty field in matcher %q", input)
-		}
-		if expr == "" {
-			return Matcher{}, fmt.Errorf("empty expression in matcher %q", input)
+	selector, err := regex.ParseMatcher(trimmed, regex.FieldClass)
+	if err != nil {
+		switch {
+		case errors.Is(err, regex.ErrEmptyQualifier):
+			return Matcher{}, fmt.Errorf("empty field in matcher %q", trimmed)
+		case errors.Is(err, regex.ErrEmptyPattern):
+			return Matcher{}, fmt.Errorf("empty expression in matcher %q", trimmed)
+		default:
+			return Matcher{}, err
 		}
 	}
 
-	return Matcher{Field: field, Expr: expr, Raw: input}, nil
+	fieldName := selector.Field.CanonicalName()
+	if fieldName == "" {
+		fieldName = defaultMatcherField
+	}
+
+	return Matcher{Field: fieldName, Expr: selector.Pattern, Raw: trimmed}, nil
+}
+
+// ParseMatcherString is exported for reuse by other packages (e.g. CLI overrides).
+func ParseMatcherString(input string) (Matcher, error) {
+	return parseMatcher(input)
 }
 
 func buildWaybarSettings(cfg *Config) (WaybarSettings, error) {

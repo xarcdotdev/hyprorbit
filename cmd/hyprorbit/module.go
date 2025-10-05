@@ -116,7 +116,7 @@ func newModuleFocusCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&matchExpr, "match", "", "Override matcher in field=regex form")
+	cmd.Flags().StringVar(&matchExpr, "match", "", "Override matcher in field:regex form")
 	cmd.Flags().StringSliceVar(&spawnCmd, "cmd", nil, "Command to spawn when no client matches")
 	cmd.Flags().BoolVar(&floatWin, "float", false, "Force spawned window to float")
 	cmd.Flags().BoolVar(&noMove, "no-move", false, "Prevent moving clients between workspaces")

@@ -14,16 +14,15 @@ func ParseMatcher(input string) (config.Matcher, error) {
 	if input == "" {
 		return config.Matcher{}, fmt.Errorf("matcher override cannot be empty")
 	}
-	field := "class"
-	expr := input
-	if idx := strings.IndexRune(input, '='); idx > 0 {
-		field = strings.TrimSpace(input[:idx])
-		expr = strings.TrimSpace(input[idx+1:])
-		if field == "" || expr == "" {
-			return config.Matcher{}, fmt.Errorf("invalid matcher %q", input)
-		}
+
+	matcher, err := config.ParseMatcherString(input)
+	if err != nil {
+		return config.Matcher{}, err
 	}
-	return config.Matcher{Field: field, Expr: expr, Raw: input}, nil
+	if matcher.Raw == "" {
+		matcher.Raw = input
+	}
+	return matcher, nil
 }
 
 func matcherToString(m config.Matcher) string {
@@ -33,7 +32,7 @@ func matcherToString(m config.Matcher) string {
 	if m.Expr == "" {
 		return ""
 	}
-	return fmt.Sprintf("%s=%s", m.Field, m.Expr)
+	return fmt.Sprintf("%s:%s", m.Field, m.Expr)
 }
 
 func compileMatcher(m config.Matcher) (*regexp.Regexp, error) {

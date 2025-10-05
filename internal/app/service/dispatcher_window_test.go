@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"hyprorbit/internal/hyprctl"
+	"hyprorbit/internal/regex"
 	"hyprorbit/internal/runtime"
 )
 
@@ -118,38 +119,44 @@ func (f *fakeHyprClient) MoveToWorkspace(context.Context, string, string) error 
 
 var _ runtime.HyprctlClient = (*fakeHyprClient)(nil)
 
-func TestParseRegexReference(t *testing.T) {
+func TestParseWindowSelector(t *testing.T) {
 	cases := []struct {
 		name    string
 		input   string
 		pattern string
-		field   windowRegexField
+		field   regex.Field
 		ok      bool
 	}{
-		{name: "class matcher", input: "class:foo", pattern: "foo", field: regexFieldClass, ok: true},
-		{name: "title case insensitive", input: "TITLE:bar", pattern: "bar", field: regexFieldTitle, ok: true},
-		{name: "initial title", input: "initialTitle:^win$", pattern: "^win$", field: regexFieldInitialTitle, ok: true},
-		{name: "initial class legacy prefix", input: "regex:initialClass:vim", pattern: "vim", field: regexFieldInitialClass, ok: true},
-		{name: "tag uppercase", input: "TAG:prod", pattern: "prod", field: regexFieldTag, ok: true},
-		{name: "legacy any", input: "regex:firefox", pattern: "firefox", field: regexFieldAny, ok: true},
-		{name: "unknown classifier", input: "something:else", pattern: "else", field: regexFieldAny, ok: true},
+		{name: "class matcher", input: "class:foo", pattern: "foo", field: regex.FieldClass, ok: true},
+		{name: "title case insensitive", input: "TITLE:bar", pattern: "bar", field: regex.FieldTitle, ok: true},
+		{name: "initial title", input: "initialTitle:^win$", pattern: "^win$", field: regex.FieldInitialTitle, ok: true},
+		{name: "initial class legacy prefix", input: "regex:initialClass:vim", pattern: "vim", field: regex.FieldInitialClass, ok: true},
+		{name: "tag uppercase", input: "TAG:prod", pattern: "prod", field: regex.FieldTag, ok: true},
+		{name: "legacy any", input: "regex:firefox", pattern: "firefox", field: regex.FieldAny, ok: true},
+		{name: "unknown classifier", input: "something:else", pattern: "else", field: regex.FieldAny, ok: true},
 		{name: "missing classifier", input: "firefox", ok: false},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			pattern, field, ok := parseRegexReference(tc.input)
+			selector, ok, err := regex.ParseWindowSelector(tc.input)
 			if ok != tc.ok {
 				t.Fatalf("expected ok=%v, got %v", tc.ok, ok)
 			}
 			if !ok {
+				if err != nil {
+					t.Fatalf("unexpected error for %q: %v", tc.input, err)
+				}
 				return
 			}
-			if pattern != tc.pattern {
-				t.Fatalf("expected pattern %q, got %q", tc.pattern, pattern)
+			if err != nil {
+				t.Fatalf("ParseWindowSelector(%q) returned error: %v", tc.input, err)
 			}
-			if field != tc.field {
-				t.Fatalf("expected field %v, got %v", tc.field, field)
+			if selector.Pattern != tc.pattern {
+				t.Fatalf("expected pattern %q, got %q", tc.pattern, selector.Pattern)
+			}
+			if selector.Field != tc.field {
+				t.Fatalf("expected field %v, got %v", tc.field, selector.Field)
 			}
 		})
 	}

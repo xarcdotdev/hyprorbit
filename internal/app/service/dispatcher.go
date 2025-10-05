@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"regexp"
@@ -13,6 +14,7 @@ import (
 	"hyprorbit/internal/ipc"
 	"hyprorbit/internal/module"
 	"hyprorbit/internal/orbit"
+	"hyprorbit/internal/regex"
 	"hyprorbit/internal/runtime"
 )
 
@@ -41,19 +43,6 @@ type moduleTarget struct {
 
 // StreamHandler streams data back to a client over an established IPC connection.
 type StreamHandler func(ctx context.Context, conn net.Conn) error
-
-type windowRegexField int
-
-const (
-	regexFieldAny windowRegexField = iota
-	regexFieldAddress
-	regexFieldClass
-	regexFieldTitle
-	regexFieldInitialClass
-	regexFieldInitialTitle
-	regexFieldTag
-	regexFieldWorkspace
-)
 
 // NewDispatcher constructs a dispatcher bound to the daemon state.
 func NewDispatcher(state *DaemonState) *Dispatcher {
@@ -765,23 +754,34 @@ func (d *Dispatcher) resolveWindowSelection(ctx context.Context, hypr runtime.Hy
 		}
 		return []hyprctl.ClientInfo{client}, nil
 	case lower == "workspace":
-		return d.clientsMatchingActiveWorkspace(ctx, hypr, nil, regexFieldAny)
+		return d.clientsMatchingActiveWorkspace(ctx, hypr, nil, regex.FieldAny)
 	default:
-		if pattern, field, ok := parseRegexReference(ref); ok {
-			if pattern == "" {
+		selector, isRegex, err := regex.ParseWindowSelector(ref)
+		if err != nil {
+			switch {
+			case errors.Is(err, regex.ErrEmptyPattern):
+				return nil, fmt.Errorf("window regex reference requires a pattern")
+			case errors.Is(err, regex.ErrEmptyQualifier):
+				return nil, fmt.Errorf("window regex reference requires a field before the pattern")
+			default:
+				return nil, err
+			}
+		}
+		if isRegex {
+			if selector.Pattern == "" {
 				return nil, fmt.Errorf("window regex reference requires a pattern")
 			}
-			re, err := regexp.Compile(pattern)
+			re, err := regexp.Compile(selector.Pattern)
 			if err != nil {
-				return nil, fmt.Errorf("window regex %q invalid: %w", pattern, err)
+				return nil, fmt.Errorf("window regex %q invalid: %w", selector.Pattern, err)
 			}
-			return d.clientsMatchingActiveWorkspace(ctx, hypr, re, field)
+			return d.clientsMatchingActiveWorkspace(ctx, hypr, re, selector.Field)
 		}
 	}
 	return nil, fmt.Errorf("window reference %q not supported", ref)
 }
 
-func (d *Dispatcher) clientsMatchingActiveWorkspace(ctx context.Context, hypr runtime.HyprctlClient, filter *regexp.Regexp, field windowRegexField) ([]hyprctl.ClientInfo, error) {
+func (d *Dispatcher) clientsMatchingActiveWorkspace(ctx context.Context, hypr runtime.HyprctlClient, filter *regexp.Regexp, field regex.Field) ([]hyprctl.ClientInfo, error) {
 	ws, err := hypr.ActiveWorkspace(ctx)
 	if err != nil {
 		return nil, err
@@ -824,21 +824,25 @@ func sanitizeClientInfo(client hyprctl.ClientInfo) hyprctl.ClientInfo {
 	return client
 }
 
-func matchesClient(re *regexp.Regexp, field windowRegexField, client hyprctl.ClientInfo) bool {
+func matchesClient(re *regexp.Regexp, field regex.Field, client hyprctl.ClientInfo) bool {
 	if re == nil {
 		return true
 	}
 	switch field {
-	case regexFieldClass:
+	case regex.FieldAddress:
+		return matchField(re, client.Address)
+	case regex.FieldClass:
 		return matchField(re, client.Class)
-	case regexFieldTitle:
+	case regex.FieldTitle:
 		return matchField(re, client.Title)
-	case regexFieldInitialClass:
+	case regex.FieldInitialClass:
 		return matchField(re, client.InitialClass)
-	case regexFieldInitialTitle:
+	case regex.FieldInitialTitle:
 		return matchField(re, client.InitialTitle)
-	case regexFieldTag:
+	case regex.FieldTag:
 		return matchTags(re, []string(client.Tags))
+	case regex.FieldWorkspace:
+		return matchField(re, client.Workspace.Name)
 	default:
 		return matchField(re, client.Title) || matchField(re, client.Class) ||
 			matchField(re, client.InitialTitle) || matchField(re, client.InitialClass)
@@ -917,69 +921,6 @@ func clientInfoFromWindow(window *hyprctl.Window) hyprctl.ClientInfo {
 		},
 	}
 }
-func parseRegexReference(ref string) (string, windowRegexField, bool) {
-	ref = strings.TrimSpace(ref)
-	if ref == "" {
-		return "", regexFieldAny, false
-	}
-
-	// Strip optional "regex:" prefix
-	pattern := ref
-	hadPrefix := false
-	lower := strings.ToLower(ref)
-	if strings.HasPrefix(lower, "regex:") {
-		pattern = strings.TrimSpace(ref[6:])
-		hadPrefix = true
-		if pattern == "" {
-			return "", regexFieldAny, true
-		}
-	}
-
-	// Check for field:pattern syntax
-	if idx := strings.Index(pattern, ":"); idx > 0 {
-		fieldStr := strings.TrimSpace(pattern[:idx])
-		patternStr := strings.TrimSpace(pattern[idx+1:])
-		
-		if patternStr == "" {
-			return "", regexFieldAny, true
-		}
-		
-		if field, ok := parseRegexField(fieldStr); ok {
-			return patternStr, field, true
-		}
-		return patternStr, regexFieldAny, true
-	}
-
-	// Plain pattern only valid if had "regex:" prefix
-	if hadPrefix {
-		return pattern, regexFieldAny, true
-	}
-	return "", regexFieldAny, false
-}
-
-func parseRegexField(input string) (windowRegexField, bool) {
-	if input == "" {
-		return regexFieldAny, false
-	}
-	normalized := strings.ToLower(input)
-	normalized = strings.ReplaceAll(normalized, "_", "")
-	normalized = strings.ReplaceAll(normalized, "-", "")
-	switch normalized {
-	case "class":
-		return regexFieldClass, true
-	case "title":
-		return regexFieldTitle, true
-	case "initialclass":
-		return regexFieldInitialClass, true
-	case "initialtitle":
-		return regexFieldInitialTitle, true
-	case "tag", "tags":
-		return regexFieldTag, true
-	default:
-		return regexFieldAny, false
-	}
-}
-
 func (d *Dispatcher) handleModuleGet(ctx context.Context) ipc.Response {
 	resp := ipc.NewResponse(false)
 	svc := d.state.ModuleService()
