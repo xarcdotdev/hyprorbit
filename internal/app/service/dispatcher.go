@@ -61,6 +61,33 @@ func errorResponse(msg string, exitCode int) ipc.Response {
 	return resp
 }
 
+// requireOrbitService returns the orbit service or an error if unavailable.
+func (d *Dispatcher) requireOrbitService() (*orbit.Service, error) {
+	svc := d.state.OrbitService()
+	if svc == nil {
+		return nil, fmt.Errorf("orbit service unavailable")
+	}
+	return svc, nil
+}
+
+// requireModuleService returns the module service or an error if unavailable.
+func (d *Dispatcher) requireModuleService() (*module.Service, error) {
+	svc := d.state.ModuleService()
+	if svc == nil {
+		return nil, fmt.Errorf("module service unavailable")
+	}
+	return svc, nil
+}
+
+// requireHyprctlClient returns the hyprctl client or an error if unavailable.
+func (d *Dispatcher) requireHyprctlClient() (runtime.HyprctlClient, error) {
+	hypr := d.state.HyprctlClient()
+	if hypr == nil {
+		return nil, fmt.Errorf("hyprctl client unavailable")
+	}
+	return hypr, nil
+}
+
 // successResponse creates a successful response, optionally assigns data, and publishes a snapshot.
 func (d *Dispatcher) successResponse(data any) (ipc.Response, StreamHandler, error) {
 	resp := ipc.NewResponse(false)
@@ -126,9 +153,9 @@ func (d *Dispatcher) handleDaemon(ctx context.Context, req ipc.Request) (ipc.Res
 
 func (d *Dispatcher) handleOrbit(ctx context.Context, req ipc.Request) (ipc.Response, StreamHandler) {
 	resp := ipc.NewResponse(false)
-	svc := d.state.OrbitService()
-	if svc == nil {
-		return errorResponse("orbit service unavailable", 1), nil
+	svc, err := d.requireOrbitService()
+	if err != nil {
+		return errorResponse(err.Error(), 1), nil
 	}
 
 	switch req.Action {
@@ -239,9 +266,9 @@ func (d *Dispatcher) handleOrbitStep(ctx context.Context, svc *orbit.Service, de
 
 func (d *Dispatcher) handleModule(ctx context.Context, req ipc.Request) (ipc.Response, StreamHandler, error) {
 	resp := ipc.NewResponse(false)
-	svc := d.state.ModuleService()
-	if svc == nil {
-		return errorResponse("module service unavailable", 1), nil, nil
+	svc, err := d.requireModuleService()
+	if err != nil {
+		return errorResponse(err.Error(), 1), nil, nil
 	}
 
 	switch req.Action {
@@ -372,9 +399,9 @@ func (d *Dispatcher) handleModuleStep(ctx context.Context, svc *module.Service, 
 		return errorResponse("module step: delta cannot be zero", 2), nil, nil
 	}
 
-	hypr := d.state.HyprctlClient()
-	if hypr == nil {
-		return errorResponse("hyprctl client unavailable", 1), nil, nil
+	hypr, err := d.requireHyprctlClient()
+	if err != nil {
+		return errorResponse(err.Error(), 1), nil, nil
 	}
 
 	name, err := workspace.ActiveName(ctx, hypr)
@@ -433,9 +460,9 @@ func (d *Dispatcher) handleModuleStep(ctx context.Context, svc *module.Service, 
 }
 
 func (d *Dispatcher) handleModuleCreate(ctx context.Context, svc *module.Service) (ipc.Response, StreamHandler, error) {
-	hypr := d.state.HyprctlClient()
-	if hypr == nil {
-		return errorResponse("hyprctl client unavailable", 1), nil, nil
+	hypr, err := d.requireHyprctlClient()
+	if err != nil {
+		return errorResponse(err.Error(), 1), nil, nil
 	}
 
 	result, err := d.createModuleWorkspace(ctx, svc, hypr, "")
@@ -451,9 +478,6 @@ func (d *Dispatcher) handleModuleCreate(ctx context.Context, svc *module.Service
 // *********************************************
 
 func (d *Dispatcher) createModuleWorkspace(ctx context.Context, svc *module.Service, hypr runtime.HyprctlClient, origin string) (*module.Result, error) {
-	if hypr == nil {
-		return nil, fmt.Errorf("hyprctl client unavailable")
-	}
 	record, err := svc.ActiveOrbit(ctx)
 	if err != nil {
 		return nil, err
@@ -533,12 +557,15 @@ func (d *Dispatcher) handleWindowMove(ctx context.Context, req ipc.Request) (ipc
 		return errorResponse(err.Error(), 2), nil, nil
 	}
 
-	hypr := d.state.HyprctlClient()
-	if hypr == nil {
-		return errorResponse("hyprctl client unavailable", 1), nil, nil
+	hypr, err := d.requireHyprctlClient()
+	if err != nil {
+		return errorResponse(err.Error(), 1), nil, nil
 	}
 
-	modSvc := d.state.ModuleService()
+	modSvc, err := d.requireModuleService()
+	if err != nil {
+		return errorResponse(err.Error(), 1), nil, nil
+	}
 
 	clients, err := d.resolveWindowsForMove(ctx, hypr, modSvc, windowRef)
 	if err != nil {
@@ -547,10 +574,6 @@ func (d *Dispatcher) handleWindowMove(ctx context.Context, req ipc.Request) (ipc
 
 	if err := validateMoveTarget(targetRef); err != nil {
 		return errorResponse(err.Error(), 2), nil, nil
-	}
-
-	if modSvc == nil {
-		return errorResponse("module service unavailable", 1), nil, nil
 	}
 
 	results, err := d.moveClientsToTarget(ctx, modSvc, hypr, clients, targetRef, silent)
@@ -711,9 +734,9 @@ func decodeClients(ctx context.Context, hypr runtime.HyprctlClient) ([]hyprctl.C
 
 func (d *Dispatcher) handleModuleGet(ctx context.Context) ipc.Response {
 	resp := ipc.NewResponse(false)
-	svc := d.state.ModuleService()
-	if svc == nil {
-		return errorResponse("module service unavailable", 1)
+	svc, err := d.requireModuleService()
+	if err != nil {
+		return errorResponse(err.Error(), 1)
 	}
 
 	hyprClient := d.state.HyprctlClient()
@@ -817,9 +840,9 @@ func filterWorkspaceSummaries(summaries []module.WorkspaceSummary, filter string
 }
 
 func (d *Dispatcher) resetWorkspaces(ctx context.Context) error {
-	hypr := d.state.HyprctlClient()
-	if hypr == nil {
-		return fmt.Errorf("hyprctl unavailable")
+	hypr, err := d.requireHyprctlClient()
+	if err != nil {
+		return err
 	}
 	workspaces, err := hypr.Workspaces(ctx)
 	if err != nil {
@@ -981,13 +1004,13 @@ func (d *Dispatcher) jumpToActiveModuleWorkspace(ctx context.Context) (string, e
 }
 
 func (d *Dispatcher) alignWorkspace(ctx context.Context) error {
-	hypr := d.state.HyprctlClient()
-	if hypr == nil {
-		return fmt.Errorf("hyprctl unavailable")
+	hypr, err := d.requireHyprctlClient()
+	if err != nil {
+		return err
 	}
-	modSvc := d.state.ModuleService()
-	if modSvc == nil {
-		return fmt.Errorf("module service unavailable")
+	modSvc, err := d.requireModuleService()
+	if err != nil {
+		return err
 	}
 	names := modSvc.ModuleNames()
 	if len(names) == 0 {
@@ -1065,9 +1088,6 @@ func (d *Dispatcher) moveClientToModule(ctx context.Context, svc *module.Service
 
 func (d *Dispatcher) resolveModuleTarget(ctx context.Context, svc *module.Service, hypr runtime.HyprctlClient, origin, ref string) (moduleTarget, error) {
 	var target moduleTarget
-	if svc == nil {
-		return target, fmt.Errorf("module service unavailable")
-	}
 	if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(ref)), "module:") {
 		return target, fmt.Errorf("window move: unsupported module target %q", ref)
 	}
