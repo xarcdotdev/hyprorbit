@@ -408,20 +408,7 @@ func (d *Dispatcher) handleModuleStep(ctx context.Context, svc *module.Service, 
 		return errorResponse("no modules configured", 1), nil, nil
 	}
 
-	idx := util.IndexOf(names, moduleName)
-	if idx == -1 {
-		if delta > 0 {
-			idx = 0
-		} else {
-			idx = len(names) - 1
-		}
-	} else {
-		next := idx + delta
-		next = (next%len(names) + len(names)) % len(names)
-		idx = next
-	}
-
-	target := names[idx]
+	target := util.CyclicIndex(names, moduleName, delta)
 	var result *module.Result
 	if _, ok := svc.Module(target); ok {
 		result, err = svc.Jump(ctx, target)
@@ -1170,27 +1157,12 @@ func (d *Dispatcher) selectModuleName(names []string, current, spec string) (str
 		if len(names) == 0 {
 			return "", fmt.Errorf("no modules configured")
 		}
-		idx := util.IndexOf(names, current)
-		if idx == -1 {
-			idx = 0
-		} else {
-			idx = (idx + 1) % len(names)
-		}
-		return names[idx], nil
+		return util.CyclicNext(names, current), nil
 	case "prev":
 		if len(names) == 0 {
 			return "", fmt.Errorf("no modules configured")
 		}
-		idx := util.IndexOf(names, current)
-		if idx == -1 {
-			idx = len(names) - 1
-		} else {
-			idx = idx - 1
-			if idx < 0 {
-				idx = len(names) - 1
-			}
-		}
-		return names[idx], nil
+		return util.CyclicPrev(names, current), nil
 	}
 
 	if strings.HasPrefix(lower, "index:") {
