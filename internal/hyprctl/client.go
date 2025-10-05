@@ -170,7 +170,7 @@ func (c *Client) MoveToWorkspace(ctx context.Context, windowAddr, workspace stri
 		}
 	}
 
-	return c.Dispatch(ctx, "movetoworkspacesilent", "name:"+workspace)
+	return c.Dispatch(ctx, "movetoworkspace", "name:"+workspace)
 }
 
 // SwitchWorkspace switches focus to the named workspace.

@@ -146,6 +146,8 @@ func (s *Service) ActiveOrbit(ctx context.Context) (*orbit.Record, error) {
 
 // Focus performs focus-or-launch for a module within the active orbit.
 func (s *Service) Focus(ctx context.Context, moduleName string, opts FocusOptions) (*Result, error) {
+	s.ResetClientCache()
+
 	mod, orbitRecord, workspace, err := s.workspace(ctx, moduleName)
 	if err != nil {
 		return nil, err
@@ -189,12 +191,12 @@ func (s *Service) Focus(ctx context.Context, moduleName string, opts FocusOption
 
 	if len(workspaceClients) > 0 {
 		client := workspaceClients[0]
-		cmds := [][]string{{"workspace", "name:" + workspace}}
 		if shouldFloat && !client.Floating {
-			cmds = append(cmds, []string{"togglefloating", "address:" + client.Address})
+			if err := s.hyprctl.Dispatch(ctx, "togglefloating", "address:"+client.Address); err != nil {
+				return nil, err
+			}
 		}
-		cmds = append(cmds, []string{"focuswindow", "address:" + client.Address})
-		if err := dispatchSequence(ctx, s.hyprctl, cmds...); err != nil {
+		if err := s.hyprctl.FocusWindow(ctx, client.Address); err != nil {
 			return nil, err
 		}
 		return &Result{Action: "focused", Workspace: workspace}, nil
@@ -202,16 +204,13 @@ func (s *Service) Focus(ctx context.Context, moduleName string, opts FocusOption
 
 	if allowMove && len(orbitClients) > 0 {
 		client := orbitClients[0]
-		cmds := [][]string{
-			{"movetoworkspace", "name:" + workspace + ",address:" + client.Address},
-			{"workspace", "name:" + workspace},
+		if err := s.hyprctl.MoveToWorkspace(ctx, client.Address, workspace); err != nil {
+			return nil, err
 		}
 		if shouldFloat && !client.Floating {
-			cmds = append(cmds, []string{"togglefloating", "address:" + client.Address})
-		}
-		cmds = append(cmds, []string{"focuswindow", "address:" + client.Address})
-		if err := dispatchSequence(ctx, s.hyprctl, cmds...); err != nil {
-			return nil, err
+			if err := s.hyprctl.Dispatch(ctx, "togglefloating", "address:"+client.Address); err != nil {
+				return nil, err
+			}
 		}
 		return &Result{Action: "moved", Workspace: workspace}, nil
 	}
@@ -220,9 +219,13 @@ func (s *Service) Focus(ctx context.Context, moduleName string, opts FocusOption
 		return nil, fmt.Errorf("module %s: no matching clients and no command to spawn", moduleName)
 	}
 
-	if err := s.hyprctl.SwitchWorkspace(ctx, workspace); err != nil {
-		return nil, err
+	activeWS, err := s.hyprctl.ActiveWorkspace(ctx)
+	if err == nil && activeWS != nil && activeWS.Name != workspace {
+		if err := s.hyprctl.SwitchWorkspace(ctx, workspace); err != nil {
+			return nil, err
+		}
 	}
+	
 	if err := spawnProcess(ctx, spawnCmd); err != nil {
 		return nil, err
 	}
