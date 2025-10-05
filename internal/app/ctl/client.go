@@ -43,6 +43,7 @@ type WindowMoveResult struct {
 	Module    string `json:"module,omitempty"`
 	Orbit     string `json:"orbit,omitempty"`
 	Created   bool   `json:"created,omitempty"`
+	Temporary bool   `json:"temporary,omitempty"`
 	Focused   bool   `json:"focused"`
 }
 

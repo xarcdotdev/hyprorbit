@@ -392,6 +392,40 @@ func (s *DaemonState) registerTempModule(orbitName, moduleName string) {
 	s.tempModules[orbitName] = list
 }
 
+func (s *DaemonState) unregisterTempModule(orbitName, moduleName string) {
+	orbitName = strings.TrimSpace(orbitName)
+	moduleName = strings.TrimSpace(moduleName)
+	if orbitName == "" || moduleName == "" {
+		return
+	}
+	s.tempModulesMu.Lock()
+	defer s.tempModulesMu.Unlock()
+	if len(s.tempModules) == 0 {
+		return
+	}
+	list := s.tempModules[orbitName]
+	if len(list) == 0 {
+		return
+	}
+	out := list[:0]
+	removed := false
+	for _, v := range list {
+		if v == moduleName {
+			removed = true
+			continue
+		}
+		out = append(out, v)
+	}
+	if !removed {
+		return
+	}
+	if len(out) == 0 {
+		delete(s.tempModules, orbitName)
+	} else {
+		s.tempModules[orbitName] = out
+	}
+}
+
 func (s *DaemonState) TempModuleNames(orbitName string) []string {
 	orbitName = strings.TrimSpace(orbitName)
 	if orbitName == "" {
@@ -433,6 +467,19 @@ func (s *DaemonState) clearTempModules() {
 	s.tempModulesMu.Lock()
 	defer s.tempModulesMu.Unlock()
 	s.tempModules = make(map[string][]string)
+}
+
+func (s *DaemonState) IsTemporaryWorkspace(workspace string) bool {
+	workspace = strings.TrimSpace(workspace)
+	if workspace == "" {
+		return false
+	}
+	moduleName, orbitName, err := module.ParseWorkspaceName(workspace)
+	if err != nil {
+		return false
+	}
+	_, ok := s.tempModuleWorkspace(orbitName, moduleName)
+	return ok
 }
 
 func (s *DaemonState) orbitActivitySnapshot() map[string]string {

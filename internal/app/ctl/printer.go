@@ -202,6 +202,9 @@ func PrintWindowMove(w io.Writer, opts Options, result *WindowMoveResult) error 
 	if result.Focused {
 		annotations = append(annotations, "focused")
 	}
+	if result.Temporary {
+		annotations = append(annotations, "temp")
+	}
 	if len(annotations) > 0 {
 		parts = append(parts, "["+strings.Join(annotations, ", ")+"]")
 	}
