@@ -77,3 +77,28 @@ func TestParseClients(t *testing.T) {
 		t.Fatalf("expected derived workspace name 3, got %q", got)
 	}
 }
+
+func TestClientInfoFieldValue(t *testing.T) {
+	client := ClientInfo{
+		Class:        "thunderbird",
+		Title:        "Inbox – Thunderbird",
+		InitialClass: "thunderbird-bin",
+		InitialTitle: "thunderbird",
+		Tags:         HyprTags{"mail", "personal"},
+	}
+
+	checks := map[string]string{
+		"class":        "thunderbird",
+		"title":        "Inbox – Thunderbird",
+		"initialClass": "thunderbird-bin",
+		"initialTitle": "thunderbird",
+		"tag":          "mail personal",
+		"tags":         "mail personal",
+	}
+
+	for field, want := range checks {
+		if got := client.FieldValue(field); got != want {
+			t.Fatalf("field %q: want %q, got %q", field, want, got)
+		}
+	}
+}

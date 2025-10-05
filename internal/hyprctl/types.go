@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 // ClientInfo represents a Hyprland client entry returned by `hyprctl clients -j`.
@@ -16,6 +17,7 @@ type ClientInfo struct {
 	InitialClass string          `json:"initialClass"`
 	InitialTitle string          `json:"initialTitle"`
 	Floating     bool            `json:"floating"`
+	Tags         HyprTags        `json:"tags"`
 	Workspace    WorkspaceHandle `json:"workspace"`
 }
 
@@ -69,6 +71,7 @@ type Window struct {
 	Title          string    `json:"title"`
 	InitialClass   string    `json:"initialClass"`
 	InitialTitle   string    `json:"initialTitle"`
+	Tags           HyprTags  `json:"tags"`
 	Pid            int       `json:"pid"`
 	Xwayland       bool      `json:"xwayland"`
 	Pinned         HyprBool  `json:"pinned"`
@@ -165,6 +168,8 @@ func (c ClientInfo) FieldValue(field string) string {
 		return c.InitialClass
 	case "initialtitle":
 		return c.InitialTitle
+	case "tag", "tags":
+		return strings.Join([]string(c.Tags), " ")
 	default:
 		return ""
 	}
@@ -198,4 +203,67 @@ func decodePayload(data []byte, out any, resource string) error {
 		return fmt.Errorf("hyprctl: decode %s: %w", resource, err)
 	}
 	return nil
+}
+
+// HyprTags normalizes the tags payload attached to windows/clients.
+type HyprTags []string
+
+// UnmarshalJSON accepts arrays, space/comma-delimited strings, or null values.
+func (t *HyprTags) UnmarshalJSON(data []byte) error {
+	if t == nil {
+		return fmt.Errorf("hyprtags: target is nil")
+	}
+	data = bytes.TrimSpace(data)
+	if len(data) == 0 || bytes.Equal(data, []byte("null")) {
+		*t = nil
+		return nil
+	}
+	switch data[0] {
+	case '[':
+		var raw []string
+		if err := json.Unmarshal(data, &raw); err != nil {
+			return fmt.Errorf("hyprtags: decode array: %w", err)
+		}
+		*t = HyprTags(normalizeTags(raw))
+		return nil
+	case '"':
+		var raw string
+		if err := json.Unmarshal(data, &raw); err != nil {
+			return fmt.Errorf("hyprtags: decode string: %w", err)
+		}
+		parts := splitTags(raw)
+		*t = HyprTags(normalizeTags(parts))
+		return nil
+	default:
+		return fmt.Errorf("hyprtags: unsupported value %s", string(data))
+	}
+}
+
+func splitTags(input string) []string {
+	input = strings.TrimSpace(input)
+	if input == "" {
+		return nil
+	}
+	parts := strings.FieldsFunc(input, func(r rune) bool {
+		return unicode.IsSpace(r) || r == ',' || r == ';'
+	})
+	return parts
+}
+
+func normalizeTags(tags []string) []string {
+	if len(tags) == 0 {
+		return nil
+	}
+	clean := make([]string, 0, len(tags))
+	for _, tag := range tags {
+		trimmed := strings.TrimSpace(tag)
+		if trimmed == "" {
+			continue
+		}
+		clean = append(clean, trimmed)
+	}
+	if len(clean) == 0 {
+		return nil
+	}
+	return clean
 }

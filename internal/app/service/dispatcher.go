@@ -731,6 +731,19 @@ func (d *Dispatcher) handleWindowMove(ctx context.Context, req ipc.Request) (ipc
 	return resp, nil, nil
 }
 
+type windowRegexField int
+
+const (
+	regexFieldAny windowRegexField = iota
+	regexFieldAddress
+	regexFieldClass
+	regexFieldTitle
+	regexFieldInitialClass
+	regexFieldInitialTitle
+	regexFieldTag
+	regexFieldWorkspace
+)
+
 func (d *Dispatcher) resolveWindowSelection(ctx context.Context, hypr runtime.HyprctlClient, ref string) ([]hyprctl.ClientInfo, error) {
 	ref = strings.TrimSpace(ref)
 	if ref == "" {
@@ -752,9 +765,9 @@ func (d *Dispatcher) resolveWindowSelection(ctx context.Context, hypr runtime.Hy
 		}
 		return []hyprctl.ClientInfo{client}, nil
 	case lower == "workspace":
-		return d.clientsMatchingActiveWorkspace(ctx, hypr, nil)
+		return d.clientsMatchingActiveWorkspace(ctx, hypr, nil, regexFieldAny)
 	default:
-		if pattern, ok := parseRegexReference(ref); ok {
+		if pattern, field, ok := parseRegexReference(ref); ok {
 			if pattern == "" {
 				return nil, fmt.Errorf("window regex reference requires a pattern")
 			}
@@ -762,13 +775,13 @@ func (d *Dispatcher) resolveWindowSelection(ctx context.Context, hypr runtime.Hy
 			if err != nil {
 				return nil, fmt.Errorf("window regex %q invalid: %w", pattern, err)
 			}
-			return d.clientsMatchingActiveWorkspace(ctx, hypr, re)
+			return d.clientsMatchingActiveWorkspace(ctx, hypr, re, field)
 		}
 	}
 	return nil, fmt.Errorf("window reference %q not supported", ref)
 }
 
-func (d *Dispatcher) clientsMatchingActiveWorkspace(ctx context.Context, hypr runtime.HyprctlClient, filter *regexp.Regexp) ([]hyprctl.ClientInfo, error) {
+func (d *Dispatcher) clientsMatchingActiveWorkspace(ctx context.Context, hypr runtime.HyprctlClient, filter *regexp.Regexp, field windowRegexField) ([]hyprctl.ClientInfo, error) {
 	ws, err := hypr.ActiveWorkspace(ctx)
 	if err != nil {
 		return nil, err
@@ -792,7 +805,7 @@ func (d *Dispatcher) clientsMatchingActiveWorkspace(ctx context.Context, hypr ru
 		if sanitized.Workspace.Name != workspaceName {
 			continue
 		}
-		if filter != nil && !matchesClient(filter, sanitized) {
+		if filter != nil && !matchesClient(filter, field, sanitized) {
 			continue
 		}
 		matched = append(matched, sanitized)
@@ -807,16 +820,62 @@ func sanitizeClientInfo(client hyprctl.ClientInfo) hyprctl.ClientInfo {
 	client.InitialClass = strings.TrimSpace(client.InitialClass)
 	client.InitialTitle = strings.TrimSpace(client.InitialTitle)
 	client.Workspace.Name = strings.TrimSpace(client.Workspace.Name)
+	client.Tags = hyprctl.HyprTags(sanitizeTags([]string(client.Tags)))
 	return client
 }
 
-func matchesClient(re *regexp.Regexp, client hyprctl.ClientInfo) bool {
+func matchesClient(re *regexp.Regexp, field windowRegexField, client hyprctl.ClientInfo) bool {
 	if re == nil {
 		return true
 	}
-	fields := []string{client.Title, client.Class, client.InitialTitle, client.InitialClass}
-	for _, field := range fields {
-		if field != "" && re.MatchString(field) {
+	switch field {
+	case regexFieldClass:
+		return matchField(re, client.Class)
+	case regexFieldTitle:
+		return matchField(re, client.Title)
+	case regexFieldInitialClass:
+		return matchField(re, client.InitialClass)
+	case regexFieldInitialTitle:
+		return matchField(re, client.InitialTitle)
+	case regexFieldTag:
+		return matchTags(re, []string(client.Tags))
+	default:
+		return matchField(re, client.Title) || matchField(re, client.Class) ||
+			matchField(re, client.InitialTitle) || matchField(re, client.InitialClass)
+	}
+}
+
+func sanitizeTags(tags []string) []string {
+	if len(tags) == 0 {
+		return nil
+	}
+	clean := make([]string, 0, len(tags))
+	for _, tag := range tags {
+		trimmed := strings.TrimSpace(tag)
+		if trimmed == "" {
+			continue
+		}
+		clean = append(clean, trimmed)
+	}
+	if len(clean) == 0 {
+		return nil
+	}
+	return clean
+}
+
+func matchField(re *regexp.Regexp, value string) bool {
+	if value == "" {
+		return false
+	}
+	return re.MatchString(value)
+}
+
+func matchTags(re *regexp.Regexp, tags []string) bool {
+	if len(tags) == 0 {
+		return false
+	}
+	for _, tag := range tags {
+		if tag != "" && re.MatchString(tag) {
 			return true
 		}
 	}
@@ -852,27 +911,66 @@ func clientInfoFromWindow(window *hyprctl.Window) hyprctl.ClientInfo {
 		InitialClass: strings.TrimSpace(window.InitialClass),
 		InitialTitle: strings.TrimSpace(window.InitialTitle),
 		Floating:     bool(window.Floating),
+		Tags:         hyprctl.HyprTags(sanitizeTags([]string(window.Tags))),
 		Workspace: hyprctl.WorkspaceHandle{
 			Name: strings.TrimSpace(window.Workspace.Name),
 		},
 	}
 }
 
-func parseRegexReference(ref string) (string, bool) {
+func parseRegexReference(ref string) (string, windowRegexField, bool) {
 	trimmed := strings.TrimSpace(ref)
 	if trimmed == "" {
-		return "", false
+		return "", regexFieldAny, false
 	}
-	idx := strings.Index(trimmed, ":")
-	if idx <= 0 {
-		return "", false
+	lower := strings.ToLower(trimmed)
+	hadPrefix := false
+	if strings.HasPrefix(lower, "regex:") {
+		trimmed = strings.TrimSpace(trimmed[len("regex:"):])
+		lower = strings.ToLower(trimmed)
+		hadPrefix = true
 	}
-	prefix := strings.ToLower(trimmed[:idx])
-	if prefix != "regex" {
-		return "", false
+	if trimmed == "" {
+		return "", regexFieldAny, true
 	}
-	pattern := strings.TrimSpace(trimmed[idx+1:])
-	return pattern, true
+	if idx := strings.Index(trimmed, ":"); idx > 0 {
+		candidate := strings.TrimSpace(trimmed[:idx])
+		pattern := strings.TrimSpace(trimmed[idx+1:])
+		if pattern == "" {
+			return "", regexFieldAny, true
+		}
+		if field, ok := parseRegexField(candidate); ok {
+			return pattern, field, true
+		}
+		return pattern, regexFieldAny, true
+	}
+	if hadPrefix {
+		return trimmed, regexFieldAny, true
+	}
+	return "", regexFieldAny, false
+}
+
+func parseRegexField(input string) (windowRegexField, bool) {
+	if input == "" {
+		return regexFieldAny, false
+	}
+	normalized := strings.ToLower(input)
+	normalized = strings.ReplaceAll(normalized, "_", "")
+	normalized = strings.ReplaceAll(normalized, "-", "")
+	switch normalized {
+	case "class":
+		return regexFieldClass, true
+	case "title":
+		return regexFieldTitle, true
+	case "initialclass":
+		return regexFieldInitialClass, true
+	case "initialtitle":
+		return regexFieldInitialTitle, true
+	case "tag", "tags":
+		return regexFieldTag, true
+	default:
+		return regexFieldAny, false
+	}
 }
 
 func (d *Dispatcher) handleModuleGet(ctx context.Context) ipc.Response {
