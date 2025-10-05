@@ -203,7 +203,7 @@ func (s *Service) Focus(ctx context.Context, moduleName string, opts FocusOption
 	if allowMove && len(orbitClients) > 0 {
 		client := orbitClients[0]
 		cmds := [][]string{
-			{"movetoworkspace", "name:" + workspace, "address:" + client.Address},
+			{"movetoworkspace", "name:" + workspace + ",address:" + client.Address},
 			{"workspace", "name:" + workspace},
 		}
 		if shouldFloat && !client.Floating {
