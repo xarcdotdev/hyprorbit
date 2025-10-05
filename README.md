@@ -5,13 +5,13 @@
     <img src="docs/images/logo.webp" alt="Logo" width="150" height="150">
     <!-- <h1>**Ø**</h1> -->
 
-<h2 align="center">hyprørbit</h2>
+<h2 align="center">hyprørbit v0.1</h2>
 
   <p align="center">
-Lightweight workspace orchestration for Hyprland with sub-5ms responsiveness.
+Lightweight workspace orchestration for <a href="https://github.com/hyprwm/Hyprland">Hyprland Power-Users</a>.
     <br>
 
-**hyprorbit** is a stateful daemon + lightweight client system for Hyprland workspace management, written in Go.
+**hyprorbit** is a stateful daemon + client system for Hyprland workspace management, written in Go.
 
 <br>
 
@@ -28,19 +28,40 @@ Lightweight workspace orchestration for Hyprland with sub-5ms responsiveness.
 
 </div>
 
+<!-- DISCLAIMER -->
+## Disclaimer
+
+⚠️ **This is experimental!** ⚠️ 
+
+**Its probably better done via native Hyprland plugin. I just wanted to see how working with multiple sets of workspaces feels. (its nice for me so far)**
+
+**Current limitiantions:**
+
+- Window rules: Auto-assigning apps to workspaces via Hyprland windowrules are not orbit-aware.
+
+- Waybar Integration: Default Hyprland workspace indicator for waybar works, but is not orbit-aware. <a href="docs/waybar_configuration.md">You can create a custom module</a>)  
+
+**What’s good:**
+
+- It’s lightweight and fast -> Good responsiveness & low system load.
+
+- Works.
+
+
 <!-- ABOUT THE PROJECT -->
 ## What is hyprorbit?
 
-**The Problem**: You've organized your Hyprland workspaces perfectly: SUPER+1 for coding, SUPER+2 for communication, etc. But what happens when you need to switch contexts? Work on a different project? Take a break? You either clutter your organized workspace or lose your setup entirely.
+**The Problem**: You've organized your Hyprland workspaces: SUPER+1 for coding, SUPER+2 for communication, etc. But what happens when you need to switch contexts? Work on a different project? Take a break? You either clutter your organized workspace or lose your setup/workspace-hotkeys. Without having designated workspaces for applications I often tend to only work on a small portion of my screen or have to search for applications scattered across workspaces & manually reorganizing.
 
 **The Solution**: hyprorbit gives you multiple "orbits" (contexts) with identical workspace layouts. Switch between a work orbit, personal orbit, or emergency-fix orbit while keeping your muscle memory intact.
 
-- Same keybindings across all contexts
 - Clean workspace separation by project/mood
-- Instant context switching without losing your setup
+- Same keybindings across all contexts
+- Instant context switching & smaller number of relevant workspaces
 
-Use `hyprorbit module focus code` to instantly switch to your code workspace.
-Use `hyprorbit orbit next` to cycle through your configured orbits.
+➡️ Use `hyprorbit module jump code` to instantly switch to your code workspace.
+
+➡️ Use `hyprorbit orbit next` to cycle through your configured orbits.
 
 <!-- <div align="center">
 ![Product Demo][product-screenshot]
@@ -48,11 +69,10 @@ Use `hyprorbit orbit next` to cycle through your configured orbits.
 
 ### Key Features
 
-- **Sub-5ms response times** via persistent daemon
 - **Orbit contexts** - separate workspace sets for different projects
-- **Stable hotkeys** - same keybindings across all orbits
-- **Focus-or-launch** - smart window management prevents duplicates
-- **Regex window matching** by class, title, or initial properties
+- **Stable hotkeys** - same workspace-keybindings across all orbits
+- **Focus-or-launch** - focus windows in current orbit instead of launching
+- **Sub-5ms response times** via persistent daemon
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -69,14 +89,20 @@ Use `hyprorbit orbit next` to cycle through your configured orbits.
 # Clone and build
 git clone https://github.com/xarcdotdev/hyprorbit.git
 cd hyprorbit
-go build ./cmd/hyprorbitd
-go build ./cmd/hyprorbit
+make
+
+# Install to PATH (recommended for Hyprland exec-once)
+sudo cp hyprorbit hyprorbitd /usr/local/bin/
 ```
 
 ### 3. Start Daemon
 
 ```sh
-# Start the daemon
+# Recommended: via Hyprland Config (order is important here)
+exec-once = hyprorbitd # start daemon
+exec-once = hyprorbit --autostart # for workspace initialization
+
+# Or manually for testing
 ./hyprorbitd
 
 # Or with custom config
@@ -88,17 +114,20 @@ go build ./cmd/hyprorbit
 Add to your `~/.config/hypr/hyprland.conf`:
 
 ```bash
-# Module hotkeys (stable across orbits)
-bind = SUPER, 1, exec, hyprorbit module focus code
+# Quick workspace jumping (stable across orbits)
+bind = SUPER, 1, exec, hyprorbit module jump code
 bind = SUPER, 2, exec, hyprorbit module focus comm
 bind = SUPER, 3, exec, hyprorbit module focus gfx
 
 # Orbit switching
 bind = SUPER, comma, exec, hyprorbit orbit prev
 bind = SUPER, period, exec, hyprorbit orbit next
+bind = SUPER ALT, 1, exec, hyprorbit orbit set alpha
+bind = SUPER ALT, 2, exec, hyprorbit orbit set beta
 
-# Quick workspace jumping
-bind = SUPER SHIFT, 1, exec, hyprorbit module jump code
+# Focus Applications
+bind = SUPER, C, exec, hyprorbit module focus coding
+bind = SUPER, G, exec, hyprorbit module focus email
 ```
 
 ### 5. Basic Usage
@@ -110,8 +139,8 @@ hyprorbit orbit get
 # Switch to beta orbit
 hyprorbit orbit set beta
 
-# Focus or launch code module
-hyprorbit module focus code --match "class=.*Code"
+# Focus or launch VScode
+hyprorbit module focus email --match "class=.*thunderbird"
 ```
 
 See `hyprorbit --help` for full options.
@@ -123,14 +152,14 @@ See `hyprorbit --help` for full options.
 ### Core Concepts
 
 **Orbits**: Independent workspace contexts (e.g., `alpha`, `beta`, `gamma`)
-- Switch between complete workspace sets
-- Maintain separate contexts for different projects/moods
-- Default orbits with Greek letter labels: α, β, γ
+- Separate environments for different projects/contexts
+- Default labels: α, β, γ
+- Each orbit maintains its own window instances
 
-**Modules**: Workspace categories that anchor your hotkeys (e.g., `code`, `comm`, `gfx`)
-- Consistent across all orbits
-- `SUPER+1` always goes to "code" regardless of active orbit
-- Modules create workspaces like `code-alpha`, `comm-beta`, etc.
+**Modules**: Workspace categories bound to consistent hotkeys (e.g., `code`, `comm`, `gfx`)
+- `SUPER+1` → "code" module in whichever orbit you're in
+- Generate orbit-specific workspaces: `code-alpha`, `comm-beta`, etc.
+- Windows bind to modules via pattern matching
 
 ### Commands
 
@@ -163,34 +192,44 @@ hyprorbit orbit prev
 
 ### Module Commands
 
+**Jump to workspace:**
+```sh
+# Simple workspace switch in current orbit
+hyprorbit module jump code
+```
+
 **Focus or launch:**
 ```sh
 # Focus existing window, move if needed, or spawn new
-hyprorbit module focus code
+hyprorbit module focus email
 
-# With custom matcher
-hyprorbit module focus code --match "class=.*VSCode"
+# With custom matcher (field:regex; legacy field=regex still works)
+hyprorbit module focus email --match "title:Thunderbird"
 
 # With spawn command override
-hyprorbit module focus code --cmd "code"
+hyprorbit module focus email --cmd "thunderbird"
 
 # Prevent window moving
-hyprorbit module focus code --no-move
+hyprorbit module focus email --no-move
 ```
 
-Modules bundle the matching and launch behaviour in `config.yaml`, so `module focus` always takes a **module name** (e.g., `thunar`). Each definition provides the matcher and fallback command, which lets hyprorbit:
-1. Resolve the active orbit and target workspace (`<module>-<orbit>`)
-2. Focus a matching window already in that workspace
-3. Otherwise move a matching window from elsewhere in the orbit
-4. Otherwise spawn the configured command, guaranteeing a single window per module/orbit
+**Module Focus Mechanism**
 
-Flags like `--match`, `--cmd`, `--float`, and `--no-move` temporarily override the config when you need custom behaviour.
+Instead of Hyprland's windowrules, hyprorbit uses `module focus <name>` to assign windows to workspaces. You define each module in `config.yaml` with a matcher pattern and fallback launch command.
 
-**Jump to workspace:**
-```sh
-# Simple workspace switch (no window management)
-hyprorbit module jump code
-```
+**How it works::**
+1. Switch to module workspace in current orbit (`comm-alpha`)
+2. Search for matching windows (`class:^signal$|^telegram$`)
+3. Then:
+   - **Focus** if match exists in workspace
+   - **Move** if match exists elsewhere in orbit
+   - **Spawn** fallback command if no match found
+
+Result: One window per module/orbit, automatically placed. You can still manually open applications elsewhere when needed.
+
+**Overrides:** `--match`, `--cmd`, `--float`, `--no-move`
+
+**Advanced:** A window can belong to multiple modules. Your email client could live in both `comm` and `outreach`, accessible from either module's workspace.
 
 
 ### Window Commands
@@ -205,6 +244,12 @@ hyprorbit window move current module:comm --silent
 
 # Create a temporary workspace in the active orbit and move window there
 hyprorbit window move current module:create
+
+# Move every window on the active workspace
+hyprorbit window move workspace module:next
+
+# Move matching windows (by class) on the active workspace
+hyprorbit window move class:"^firefox$" module:comm
 ```
 
 **Supported module targets:**
@@ -216,6 +261,20 @@ hyprorbit window move current module:create
 
 By default moves focus to the destination workspace; pass `--silent` to keep focus on the current workspace after the move.
 
+**Window selectors:**
+- `current` – focused window (default)
+- `workspace` – every window currently on the active workspace
+
+- `orbit:<selector>` – look across the entire active orbit (e.g. `orbit:class:foot`)
+- `global:<selector>` – look across every workspace (e.g. `global:title:"Media"`)
+
+- `class:<pattern>` – regex applied to the window class (e.g. `class:"(?i)firefox"`)
+- `title:<pattern>` – regex applied to the window title
+- `initialClass:<pattern>` / `initialTitle:<pattern>` – regex applied to the initial values Hyprland recorded
+- `tag:<pattern>` – regex applied to Hyprland window tags (opt-in)
+- `regex:<pattern>` – applies regex to all fields (class/title/initial)
+
+Selectors default to the active workspace; prefix with `orbit:` or `global:` to expand the search scope.
 
 ### Output Formats
 
@@ -235,6 +294,9 @@ $ hyprorbit orbit get --json
 
 $ hyprorbit module focus code --json
 {"action":"focused","workspace":"code-alpha","orbit":"alpha"}
+
+$ hyprorbit module watch --waybar
+{"alt":"comm-alpha","class":["comm","alpha"],"text":"comm","tooltip":"α"}
 ```
 
 **Quiet mode:**
@@ -258,6 +320,7 @@ $ hyprorbit orbit get --quiet
 orbits:
   - name: "alpha"       # Required: alphanumeric identifier
     label: "α"          # Optional: display text
+    color: "#BC83F9"  # Optional: isnt used yet
   - name: "beta"
     label: "β"
   - name: "gamma"
@@ -266,7 +329,7 @@ orbits:
 modules:
   code:
     focus:
-      match: "class=.*Code"              # Window matcher
+      match: "class=.*code"              # Window matcher
       cmd: ["ghostty", "-T", "Code"]       # Spawn command
   comm:
     focus:
@@ -290,14 +353,14 @@ defaults:
 - `initialClass`: Class at window creation
 - `initialTitle`: Title at window creation
 
-**Match format:** `field=regex`
+**Match format:** `field:regex` (legacy `field=regex` remains supported)
 
 ```sh
 # Match by class
-hyprorbit module focus code --match "class=.*Code"
+hyprorbit module focus code --match "class:^.*Code$"
 
 # Match by title
-hyprorbit module focus browser --match "title=.*Firefox"
+hyprorbit module focus browser --match "title:.*Firefox"
 ```
 
 ### Daemon Configuration
@@ -340,22 +403,6 @@ For a more performant and configurable waybar integration check out docs/WAYBAR.
 }
 ```
 
-### Systemd Service
-
-```ini
-[Unit]
-Description=Hypr Orbits Daemon
-After=graphical-session.target
-
-[Service]
-Type=simple
-ExecStart=/usr/bin/hyprorbitd
-Restart=on-failure
-
-[Install]
-WantedBy=default.target
-```
-
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## Troubleshooting
@@ -386,7 +433,7 @@ hyprorbit --socket /tmp/my-orbits.sock orbit get
 hyprctl clients -j | grep -A 10 -B 10 "YourApp"
 
 # Test matchers
-hyprorbit module focus code --match "class=.*" --no-move
+hyprorbit module focus code --match "class:.*" --no-move
 ```
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
@@ -394,21 +441,21 @@ hyprorbit module focus code --match "class=.*" --no-move
 ## Roadmap
 
 ### Current Status
-- ✅ Basic orbit management
+- ✅ Initial Configuration system
+- ✅ Orbit management
 - ✅ Module focus/jump commands
 - ✅ Window matching system
-- ✅ Configuration system
-- ✅ Daemon implementation
-- ✅ IPC protocol
-- ✅ Client-server architecture
-- ✅ Waybar/status bar module
+- ✅ Shell Completion Script
+- ✅ Waybar/status support
+- ✅ Multi Monitor Support
+- ✅ Client-server architecture (IPC)
 - ✅ Native Hyprland socket integration
 
 ### Planned Features
-- 📋 Module seeding (populate workspace with multiple apps)
-- 💾 State snapshots across reboots
-- 🔔 Desktop notifications
-- 📦 Package distribution (AUR, Nix)
+- [ ] Configurable notifications
+- [ ] Module seeding (populate workspace with multiple apps)
+- [ ] Hyprland tag support for adressing windows
+- [ ] Making window targeting global instead only of only  in focused workspace  
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -423,13 +470,10 @@ git clone https://github.com/xarcdotdev/hyprorbit.git
 cd hyprorbit
 
 # Build both binaries
-make build
+make
 
 # Run tests
 make test
-
-# Development with live reload
-make dev
 ```
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
