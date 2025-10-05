@@ -139,7 +139,7 @@ hyprorbit orbit get
 # Switch to beta orbit
 hyprorbit orbit set beta
 
-# Focus or launch VScode
+# Focus or launch email
 hyprorbit module focus email --match "class=.*thunderbird"
 ```
 
