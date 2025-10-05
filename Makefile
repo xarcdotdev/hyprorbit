@@ -1,4 +1,4 @@
-.PHONY: build tidy lint clean
+.PHONY: build tidy lint test clean
 
 build:
 	go build -o hyprorbit ./cmd/hyprorbit
@@ -9,6 +9,9 @@ tidy:
 
 lint:
 	go vet ./...
+
+test:
+	go test ./...
 
 clean:
 	rm -f hyprorbit hyprorbitd
