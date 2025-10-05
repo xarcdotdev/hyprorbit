@@ -61,6 +61,29 @@ func errorResponse(msg string, exitCode int) ipc.Response {
 	return resp
 }
 
+// successResponse creates a successful response, optionally assigns data, and publishes a snapshot.
+func (d *Dispatcher) successResponse(data any) (ipc.Response, StreamHandler, error) {
+	resp := ipc.NewResponse(false)
+	if data != nil {
+		if err := ipc.AssignData(&resp, data); err != nil {
+			return errorResponse(err.Error(), 1), nil, nil
+		}
+	}
+	d.publishSnapshot()
+	return resp, nil, nil
+}
+
+// successResponseWithModuleResult records module result and returns success response with data.
+func (d *Dispatcher) successResponseWithModuleResult(result *module.Result) (ipc.Response, StreamHandler, error) {
+	resp := ipc.NewResponse(false)
+	if err := ipc.AssignData(&resp, result); err != nil {
+		return errorResponse(err.Error(), 1), nil, nil
+	}
+	d.recordModuleResult(result)
+	d.publishSnapshot()
+	return resp, nil, nil
+}
+
 // Handle executes the request, returning a response suitable for IPC clients and an optional stream handler.
 func (d *Dispatcher) Handle(ctx context.Context, req ipc.Request) (ipc.Response, StreamHandler, error) {
 	if req.Version != ipc.Version {
@@ -244,16 +267,12 @@ func (d *Dispatcher) handleModule(ctx context.Context, req ipc.Request) (ipc.Res
 		if err := d.resetWorkspaces(ctx); err != nil {
 			return errorResponse(err.Error(), 1), nil, nil
 		}
-		resp.Success = true
-		d.publishSnapshot()
-		return resp, nil, nil
+		return d.successResponse(nil)
 	case "workspace-align":
 		if err := d.alignWorkspace(ctx); err != nil {
 			return errorResponse(err.Error(), 1), nil, nil
 		}
-		resp.Success = true
-		d.publishSnapshot()
-		return resp, nil, nil
+		return d.successResponse(nil)
 	case "get":
 		return d.handleModuleGet(ctx), nil, nil
 	case "jump-next":
@@ -309,12 +328,7 @@ func (d *Dispatcher) handleModule(ctx context.Context, req ipc.Request) (ipc.Res
 			d.cleanupTemporaryWorkspace(ctx, hypr, originWorkspace)
 		}
 
-		if err := ipc.AssignData(&resp, result); err != nil {
-			return errorResponse(err.Error(), 1), nil, nil
-		}
-		d.recordModuleResult(result)
-		d.publishSnapshot()
-		return resp, nil, nil
+		return d.successResponseWithModuleResult(result)
 	}
 	if _, ok := svc.Module(moduleName); !ok {
 		available := strings.Join(svc.ModuleNames(), ", ")
@@ -331,12 +345,7 @@ func (d *Dispatcher) handleModule(ctx context.Context, req ipc.Request) (ipc.Res
 		if err != nil {
 			return errorResponse(err.Error(), 1), nil, nil
 		}
-		if err := ipc.AssignData(&resp, result); err != nil {
-			return errorResponse(err.Error(), 1), nil, nil
-		}
-		d.recordModuleResult(result)
-		d.publishSnapshot()
-		return resp, nil, nil
+		return d.successResponseWithModuleResult(result)
 	case "seed":
 		results, err := svc.Seed(ctx, moduleName)
 		if err != nil {
@@ -345,10 +354,7 @@ func (d *Dispatcher) handleModule(ctx context.Context, req ipc.Request) (ipc.Res
 		if results == nil {
 			results = []*module.Result{}
 		}
-		if err := ipc.AssignData(&resp, results); err != nil {
-			return errorResponse(err.Error(), 1), nil, nil
-		}
-		return resp, nil, nil
+		return d.successResponse(results)
 	default:
 		return errorResponse(fmt.Sprintf("unknown module action %q", req.Action), 2), nil, nil
 	}
@@ -443,8 +449,6 @@ func (d *Dispatcher) handleModuleStep(ctx context.Context, svc *module.Service, 
 }
 
 func (d *Dispatcher) handleModuleCreate(ctx context.Context, svc *module.Service) (ipc.Response, StreamHandler, error) {
-	resp := ipc.NewResponse(false)
-
 	hypr := d.state.HyprctlClient()
 	if hypr == nil {
 		return errorResponse("hyprctl client unavailable", 1), nil, nil
@@ -455,13 +459,7 @@ func (d *Dispatcher) handleModuleCreate(ctx context.Context, svc *module.Service
 		return errorResponse(err.Error(), 1), nil, nil
 	}
 
-	if err := ipc.AssignData(&resp, result); err != nil {
-		return errorResponse(err.Error(), 1), nil, nil
-	}
-
-	d.recordModuleResult(result)
-	d.publishSnapshot()
-	return resp, nil, nil
+	return d.successResponseWithModuleResult(result)
 }
 
 // *********************************************
@@ -539,8 +537,6 @@ func (d *Dispatcher) handleWindow(ctx context.Context, req ipc.Request) (ipc.Res
 }
 
 func (d *Dispatcher) handleWindowMove(ctx context.Context, req ipc.Request) (ipc.Response, StreamHandler, error) {
-	resp := ipc.NewResponse(false)
-
 	if len(req.Args) != 2 {
 		return errorResponse("window move requires a window reference and target", 2), nil, nil
 	}
@@ -603,12 +599,7 @@ func (d *Dispatcher) handleWindowMove(ctx context.Context, req ipc.Request) (ipc
 		payload = results
 	}
 
-	if err := ipc.AssignData(&resp, payload); err != nil {
-		return errorResponse(err.Error(), 1), nil, nil
-	}
-
-	d.publishSnapshot()
-	return resp, nil, nil
+	return d.successResponse(payload)
 }
 
 func (d *Dispatcher) resolveWindowSelection(ctx context.Context, hypr runtime.HyprctlClient, orbitProvider orbit.Provider, ref string) ([]hyprctl.ClientInfo, error) {
