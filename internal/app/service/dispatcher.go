@@ -16,6 +16,7 @@ import (
 	"hyprorbit/internal/orbit"
 	"hyprorbit/internal/regex"
 	"hyprorbit/internal/runtime"
+	"hyprorbit/internal/util"
 	"hyprorbit/internal/window"
 )
 
@@ -213,7 +214,7 @@ func (d *Dispatcher) handleOrbitStep(ctx context.Context, svc *orbit.Service, de
 		resp.ExitCode = 1
 		return resp, nil
 	}
-	idx := indexOf(seq, current)
+	idx := util.IndexOf(seq, current)
 	if idx == -1 {
 		resp.Error = fmt.Sprintf("orbit: current orbit %q not found", current)
 		resp.ExitCode = 1
@@ -490,7 +491,7 @@ func (d *Dispatcher) handleModuleStep(ctx context.Context, svc *module.Service, 
 	names := svc.ModuleNames()
 	tempNames := d.state.TempModuleNames(orbitName)
 	if len(tempNames) > 0 {
-		names = mergeStrings(names, tempNames)
+		names = util.MergeStrings(names, tempNames)
 	}
 	if len(names) == 0 {
 		resp.Error = "no modules configured"
@@ -498,7 +499,7 @@ func (d *Dispatcher) handleModuleStep(ctx context.Context, svc *module.Service, 
 		return resp, nil, nil
 	}
 
-	idx := indexOf(names, moduleName)
+	idx := util.IndexOf(names, moduleName)
 	if idx == -1 {
 		if delta > 0 {
 			idx = 0
@@ -667,7 +668,7 @@ func (d *Dispatcher) handleWindowMove(ctx context.Context, req ipc.Request) (ipc
 	silent := false
 	if req.Flags != nil {
 		if raw, ok := req.Flags["silent"]; ok {
-			val, err := toBool(raw)
+			val, err := util.ToBool(raw)
 			if err != nil {
 				resp.Error = fmt.Sprintf("window move silent flag: %v", err)
 				resp.ExitCode = 2
@@ -1352,7 +1353,7 @@ func (d *Dispatcher) resolveModuleTarget(ctx context.Context, svc *module.Servic
 	names := svc.ModuleNames()
 	tempNames := d.state.TempModuleNames(orbitName)
 	if len(tempNames) > 0 {
-		names = mergeStrings(names, tempNames)
+		names = util.MergeStrings(names, tempNames)
 	}
 	if len(names) == 0 {
 		return target, fmt.Errorf("no modules configured")
@@ -1389,7 +1390,7 @@ func (d *Dispatcher) selectModuleName(names []string, current, spec string) (str
 		if len(names) == 0 {
 			return "", fmt.Errorf("no modules configured")
 		}
-		idx := indexOf(names, current)
+		idx := util.IndexOf(names, current)
 		if idx == -1 {
 			idx = 0
 		} else {
@@ -1400,7 +1401,7 @@ func (d *Dispatcher) selectModuleName(names []string, current, spec string) (str
 		if len(names) == 0 {
 			return "", fmt.Errorf("no modules configured")
 		}
-		idx := indexOf(names, current)
+		idx := util.IndexOf(names, current)
 		if idx == -1 {
 			idx = len(names) - 1
 		} else {
@@ -1558,37 +1559,20 @@ func focusOptionsFromFlags(flags map[string]any) (module.FocusOptions, error) {
 		}
 	}
 	if force, ok := flags["force_float"]; ok {
-		b, err := toBool(force)
+		b, err := util.ToBool(force)
 		if err != nil {
 			return opts, fmt.Errorf("module focus force_float must be boolean")
 		}
 		opts.ForceFloat = b
 	}
 	if noMove, ok := flags["no_move"]; ok {
-		b, err := toBool(noMove)
+		b, err := util.ToBool(noMove)
 		if err != nil {
 			return opts, fmt.Errorf("module focus no_move must be boolean")
 		}
 		opts.NoMove = b
 	}
 	return opts, nil
-}
-
-func toBool(v any) (bool, error) {
-	switch b := v.(type) {
-	case bool:
-		return b, nil
-	case string:
-		if b == "true" {
-			return true, nil
-		}
-		if b == "false" {
-			return false, nil
-		}
-		return false, fmt.Errorf("invalid boolean string %q", b)
-	default:
-		return false, fmt.Errorf("invalid boolean type %T", v)
-	}
 }
 
 func assignData(resp *ipc.Response, value any) error {
@@ -1604,38 +1588,6 @@ func assignData(resp *ipc.Response, value any) error {
 	resp.Data = data
 	resp.Success = true
 	return nil
-}
-
-func indexOf(values []string, needle string) int {
-	for i, v := range values {
-		if v == needle {
-			return i
-		}
-	}
-	return -1
-}
-
-func mergeStrings(base, extra []string) []string {
-	if len(extra) == 0 {
-		return base
-	}
-	seen := make(map[string]struct{}, len(base)+len(extra))
-	merged := make([]string, 0, len(base)+len(extra))
-	for _, v := range base {
-		if _, ok := seen[v]; ok {
-			continue
-		}
-		seen[v] = struct{}{}
-		merged = append(merged, v)
-	}
-	for _, v := range extra {
-		if _, ok := seen[v]; ok {
-			continue
-		}
-		seen[v] = struct{}{}
-		merged = append(merged, v)
-	}
-	return merged
 }
 
 func (d *Dispatcher) cleanupTemporaryWorkspace(ctx context.Context, hypr runtime.HyprctlClient, workspace string) {
