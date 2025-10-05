@@ -42,6 +42,19 @@ type moduleTarget struct {
 // StreamHandler streams data back to a client over an established IPC connection.
 type StreamHandler func(ctx context.Context, conn net.Conn) error
 
+type windowRegexField int
+
+const (
+	regexFieldAny windowRegexField = iota
+	regexFieldAddress
+	regexFieldClass
+	regexFieldTitle
+	regexFieldInitialClass
+	regexFieldInitialTitle
+	regexFieldTag
+	regexFieldWorkspace
+)
+
 // NewDispatcher constructs a dispatcher bound to the daemon state.
 func NewDispatcher(state *DaemonState) *Dispatcher {
 	return &Dispatcher{state: state}
@@ -731,19 +744,6 @@ func (d *Dispatcher) handleWindowMove(ctx context.Context, req ipc.Request) (ipc
 	return resp, nil, nil
 }
 
-type windowRegexField int
-
-const (
-	regexFieldAny windowRegexField = iota
-	regexFieldAddress
-	regexFieldClass
-	regexFieldTitle
-	regexFieldInitialClass
-	regexFieldInitialTitle
-	regexFieldTag
-	regexFieldWorkspace
-)
-
 func (d *Dispatcher) resolveWindowSelection(ctx context.Context, hypr runtime.HyprctlClient, ref string) ([]hyprctl.ClientInfo, error) {
 	ref = strings.TrimSpace(ref)
 	if ref == "" {
@@ -917,35 +917,42 @@ func clientInfoFromWindow(window *hyprctl.Window) hyprctl.ClientInfo {
 		},
 	}
 }
-
 func parseRegexReference(ref string) (string, windowRegexField, bool) {
-	trimmed := strings.TrimSpace(ref)
-	if trimmed == "" {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
 		return "", regexFieldAny, false
 	}
-	lower := strings.ToLower(trimmed)
+
+	// Strip optional "regex:" prefix
+	pattern := ref
 	hadPrefix := false
+	lower := strings.ToLower(ref)
 	if strings.HasPrefix(lower, "regex:") {
-		trimmed = strings.TrimSpace(trimmed[len("regex:"):])
-		lower = strings.ToLower(trimmed)
+		pattern = strings.TrimSpace(ref[6:])
 		hadPrefix = true
-	}
-	if trimmed == "" {
-		return "", regexFieldAny, true
-	}
-	if idx := strings.Index(trimmed, ":"); idx > 0 {
-		candidate := strings.TrimSpace(trimmed[:idx])
-		pattern := strings.TrimSpace(trimmed[idx+1:])
 		if pattern == "" {
 			return "", regexFieldAny, true
 		}
-		if field, ok := parseRegexField(candidate); ok {
-			return pattern, field, true
-		}
-		return pattern, regexFieldAny, true
 	}
+
+	// Check for field:pattern syntax
+	if idx := strings.Index(pattern, ":"); idx > 0 {
+		fieldStr := strings.TrimSpace(pattern[:idx])
+		patternStr := strings.TrimSpace(pattern[idx+1:])
+		
+		if patternStr == "" {
+			return "", regexFieldAny, true
+		}
+		
+		if field, ok := parseRegexField(fieldStr); ok {
+			return patternStr, field, true
+		}
+		return patternStr, regexFieldAny, true
+	}
+
+	// Plain pattern only valid if had "regex:" prefix
 	if hadPrefix {
-		return trimmed, regexFieldAny, true
+		return pattern, regexFieldAny, true
 	}
 	return "", regexFieldAny, false
 }
