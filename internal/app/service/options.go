@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"hyprorbit/internal/module"
+	"hyprorbit/internal/util"
 )
 
 const (
@@ -52,4 +55,71 @@ func (o Options) EffectiveCacheTTL() time.Duration {
 		return 0
 	}
 	return o.CacheTTL
+}
+
+// moduleListFilterFromFlags extracts the filter value from request flags.
+func moduleListFilterFromFlags(flags map[string]any) (string, error) {
+	if len(flags) == 0 {
+		return "all", nil
+	}
+	raw, ok := flags["filter"]
+	if !ok {
+		return "all", nil
+	}
+	value, ok := raw.(string)
+	if !ok {
+		return "", fmt.Errorf("module list filter must be a string")
+	}
+	switch value {
+	case "all", "active", "inactive":
+		return value, nil
+	default:
+		return "", fmt.Errorf("module list filter %q not supported", value)
+	}
+}
+
+// focusOptionsFromFlags extracts module focus options from request flags.
+func focusOptionsFromFlags(flags map[string]any) (module.FocusOptions, error) {
+	var opts module.FocusOptions
+	if len(flags) == 0 {
+		return opts, nil
+	}
+	if matcher, ok := flags["matcher"]; ok {
+		str, ok := matcher.(string)
+		if !ok {
+			return opts, fmt.Errorf("module focus matcher must be a string")
+		}
+		opts.MatcherOverride = str
+	}
+	if cmd, ok := flags["cmd"]; ok {
+		switch v := cmd.(type) {
+		case []any:
+			for _, raw := range v {
+				str, ok := raw.(string)
+				if !ok {
+					return opts, fmt.Errorf("module focus cmd entries must be strings")
+				}
+				opts.CmdOverride = append(opts.CmdOverride, str)
+			}
+		case []string:
+			opts.CmdOverride = append(opts.CmdOverride, v...)
+		default:
+			return opts, fmt.Errorf("module focus cmd must be an array of strings")
+		}
+	}
+	if force, ok := flags["force_float"]; ok {
+		b, err := util.ToBool(force)
+		if err != nil {
+			return opts, fmt.Errorf("module focus force_float must be boolean")
+		}
+		opts.ForceFloat = b
+	}
+	if noMove, ok := flags["no_move"]; ok {
+		b, err := util.ToBool(noMove)
+		if err != nil {
+			return opts, fmt.Errorf("module focus no_move must be boolean")
+		}
+		opts.NoMove = b
+	}
+	return opts, nil
 }
