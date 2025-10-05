@@ -123,3 +123,19 @@ func focusOptionsFromFlags(flags map[string]any) (module.FocusOptions, error) {
 	}
 	return opts, nil
 }
+
+// parseSilentFlag extracts the silent flag from request flags.
+func parseSilentFlag(flags map[string]any) (bool, error) {
+	if flags == nil {
+		return false, nil
+	}
+	raw, ok := flags["silent"]
+	if !ok {
+		return false, nil
+	}
+	val, err := util.ToBool(raw)
+	if err != nil {
+		return false, fmt.Errorf("window move silent flag: %w", err)
+	}
+	return val, nil
+}

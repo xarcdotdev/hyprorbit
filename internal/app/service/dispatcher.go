@@ -528,15 +528,9 @@ func (d *Dispatcher) handleWindowMove(ctx context.Context, req ipc.Request) (ipc
 	windowRef := strings.TrimSpace(req.Args[0])
 	targetRef := strings.TrimSpace(req.Args[1])
 
-	silent := false
-	if req.Flags != nil {
-		if raw, ok := req.Flags["silent"]; ok {
-			val, err := util.ToBool(raw)
-			if err != nil {
-				return errorResponse(fmt.Sprintf("window move silent flag: %v", err), 2), nil, nil
-			}
-			silent = val
-		}
+	silent, err := parseSilentFlag(req.Flags)
+	if err != nil {
+		return errorResponse(err.Error(), 2), nil, nil
 	}
 
 	hypr := d.state.HyprctlClient()
@@ -545,6 +539,30 @@ func (d *Dispatcher) handleWindowMove(ctx context.Context, req ipc.Request) (ipc
 	}
 
 	modSvc := d.state.ModuleService()
+
+	clients, err := d.resolveWindowsForMove(ctx, hypr, modSvc, windowRef)
+	if err != nil {
+		return errorResponse(err.Error(), 1), nil, nil
+	}
+
+	if err := validateMoveTarget(targetRef); err != nil {
+		return errorResponse(err.Error(), 2), nil, nil
+	}
+
+	if modSvc == nil {
+		return errorResponse("module service unavailable", 1), nil, nil
+	}
+
+	results, err := d.moveClientsToTarget(ctx, modSvc, hypr, clients, targetRef, silent)
+	if err != nil {
+		return errorResponse(err.Error(), 1), nil, nil
+	}
+
+	return d.successResponse(formatMoveResults(results))
+}
+
+// resolveWindowsForMove resolves window references and validates the selection.
+func (d *Dispatcher) resolveWindowsForMove(ctx context.Context, hypr runtime.HyprctlClient, modSvc *module.Service, windowRef string) ([]hyprctl.ClientInfo, error) {
 	var orbitProvider orbit.Provider
 	if modSvc != nil {
 		orbitProvider = modSvc
@@ -552,38 +570,42 @@ func (d *Dispatcher) handleWindowMove(ctx context.Context, req ipc.Request) (ipc
 
 	clients, err := d.resolveWindowSelection(ctx, hypr, orbitProvider, windowRef)
 	if err != nil {
-		return errorResponse(err.Error(), 1), nil, nil
+		return nil, err
 	}
 	if len(clients) == 0 {
-		return errorResponse(fmt.Sprintf("window selector %q matched no windows", windowRef), 1), nil, nil
+		return nil, fmt.Errorf("window selector %q matched no windows", windowRef)
 	}
+	return clients, nil
+}
 
+// validateMoveTarget checks if the target reference is valid.
+func validateMoveTarget(targetRef string) error {
 	if !strings.HasPrefix(strings.ToLower(targetRef), "module:") {
-		return errorResponse(fmt.Sprintf("window move: unsupported target %q", targetRef), 2), nil, nil
+		return fmt.Errorf("window move: unsupported target %q", targetRef)
 	}
+	return nil
+}
 
-	if modSvc == nil {
-		return errorResponse("module service unavailable", 1), nil, nil
-	}
-
+// moveClientsToTarget moves all clients to the target, focusing the last one if not silent.
+func (d *Dispatcher) moveClientsToTarget(ctx context.Context, svc *module.Service, hypr runtime.HyprctlClient, clients []hyprctl.ClientInfo, targetRef string, silent bool) ([]windowMoveResult, error) {
 	results := make([]windowMoveResult, 0, len(clients))
 	for idx, client := range clients {
 		focus := !silent && idx == len(clients)-1
-		res, err := d.moveClientToModule(ctx, modSvc, hypr, client, targetRef, focus)
+		res, err := d.moveClientToModule(ctx, svc, hypr, client, targetRef, focus)
 		if err != nil {
-			return errorResponse(err.Error(), 1), nil, nil
+			return nil, err
 		}
 		results = append(results, res)
 	}
+	return results, nil
+}
 
-	var payload any
+// formatMoveResults formats the move results as a single object or array.
+func formatMoveResults(results []windowMoveResult) any {
 	if len(results) == 1 {
-		payload = results[0]
-	} else {
-		payload = results
+		return results[0]
 	}
-
-	return d.successResponse(payload)
+	return results
 }
 
 func (d *Dispatcher) resolveWindowSelection(ctx context.Context, hypr runtime.HyprctlClient, orbitProvider orbit.Provider, ref string) ([]hyprctl.ClientInfo, error) {
