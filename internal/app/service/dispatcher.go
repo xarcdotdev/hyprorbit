@@ -18,6 +18,7 @@ import (
 	"hyprorbit/internal/runtime"
 	"hyprorbit/internal/util"
 	"hyprorbit/internal/window"
+	"hyprorbit/internal/workspace"
 )
 
 // Dispatcher routes IPC requests to domain handlers.
@@ -578,6 +579,25 @@ func (d *Dispatcher) handleModuleCreate(ctx context.Context, svc *module.Service
 	d.recordModuleResult(result)
 	d.publishSnapshot()
 	return resp, nil, nil
+}
+
+// *********************************************
+// Helper functions
+// *********************************************
+
+func assignData(resp *ipc.Response, value any) error {
+	if value == nil {
+		resp.Success = true
+		resp.Data = nil
+		return nil
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	resp.Data = data
+	resp.Success = true
+	return nil
 }
 
 func (d *Dispatcher) createModuleWorkspace(ctx context.Context, svc *module.Service, hypr runtime.HyprctlClient, origin string) (*module.Result, error) {
@@ -1244,17 +1264,17 @@ func (d *Dispatcher) alignWorkspace(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	workspace := module.WorkspaceName(names[0], record.Name)
+	targetWorkspace := module.WorkspaceName(names[0], record.Name)
 
 	// Move current active workspace windows into the target before switching.
 	ws, err := hypr.ActiveWorkspace(ctx)
 	if err == nil && ws != nil {
-		if err := d.ensureWorkspaceExists(ctx, hypr, workspace, ws.Name); err != nil {
+		if err := workspace.EnsureExists(ctx, hypr, targetWorkspace, ws.Name); err != nil {
 			return err
 		}
 
 		clients := d.collectClients(ctx)
-		moveErr := d.moveClientsToWorkspace(ctx, hypr, clients, workspace)
+		moveErr := workspace.MoveClients(ctx, hypr, clients, targetWorkspace)
 		if moveErr != nil {
 			return moveErr
 		}
@@ -1280,7 +1300,7 @@ func (d *Dispatcher) moveClientToModule(ctx context.Context, svc *module.Service
 		return result, err
 	}
 
-	if err := d.moveClientsToWorkspace(ctx, hypr, []hyprctl.ClientInfo{client}, target.Workspace); err != nil {
+	if err := workspace.MoveClients(ctx, hypr, []hyprctl.ClientInfo{client}, target.Workspace); err != nil {
 		return result, err
 	}
 
@@ -1368,13 +1388,13 @@ func (d *Dispatcher) resolveModuleTarget(ctx context.Context, svc *module.Servic
 		target.Temporary = true
 	}
 
-	workspace := module.WorkspaceName(moduleName, orbitName)
-	if err := d.ensureWorkspaceExists(ctx, hypr, workspace, origin); err != nil {
+	targetWorkspace := module.WorkspaceName(moduleName, orbitName)
+	if err := workspace.EnsureExists(ctx, hypr, targetWorkspace, origin); err != nil {
 		return target, err
 	}
 
 	target.Module = moduleName
-	target.Workspace = workspace
+	target.Workspace = targetWorkspace
 	target.Orbit = orbitName
 	return target, nil
 }
@@ -1480,44 +1500,6 @@ func (d *Dispatcher) recordModuleResult(result *module.Result) {
 	d.state.recordWorkspaceActivation(result.Workspace)
 }
 
-func (d *Dispatcher) ensureWorkspaceExists(ctx context.Context, hypr runtime.HyprctlClient, target, origin string) error {
-	if target == "" {
-		return fmt.Errorf("workspace: target name missing")
-	}
-	if err := hypr.SwitchWorkspace(ctx, target); err != nil {
-		return err
-	}
-	if origin != "" && origin != target {
-		if err := hypr.SwitchWorkspace(ctx, origin); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (d *Dispatcher) moveClientsToWorkspace(ctx context.Context, hypr runtime.HyprctlClient, clients []hyprctl.ClientInfo, target string) error {
-	if target == "" {
-		return nil
-	}
-	var firstErr error
-	for _, client := range clients {
-		if client.Address == "" {
-			continue
-		}
-		name := strings.TrimSpace(client.Workspace.Name)
-		if name == "" || name == target {
-			continue
-		}
-		if strings.HasPrefix(name, "special") {
-			continue
-		}
-		if err := hypr.MoveToWorkspace(ctx, client.Address, target); err != nil && firstErr == nil {
-			firstErr = err
-		}
-	}
-	return firstErr
-}
-
 func (d *Dispatcher) collectClients(ctx context.Context) []hyprctl.ClientInfo {
 	hypr := d.state.HyprctlClient()
 	if hypr == nil {
@@ -1575,70 +1557,42 @@ func focusOptionsFromFlags(flags map[string]any) (module.FocusOptions, error) {
 	return opts, nil
 }
 
-func assignData(resp *ipc.Response, value any) error {
-	if value == nil {
-		resp.Success = true
-		resp.Data = nil
-		return nil
-	}
-	data, err := json.Marshal(value)
-	if err != nil {
-		return err
-	}
-	resp.Data = data
-	resp.Success = true
-	return nil
-}
-
-func (d *Dispatcher) cleanupTemporaryWorkspace(ctx context.Context, hypr runtime.HyprctlClient, workspace string) {
-	workspace = strings.TrimSpace(workspace)
-	if workspace == "" || hypr == nil {
+func (d *Dispatcher) cleanupTemporaryWorkspace(ctx context.Context, hypr runtime.HyprctlClient, targetWorkspace string) {
+	targetWorkspace = strings.TrimSpace(targetWorkspace)
+	if targetWorkspace == "" || hypr == nil {
 		return
 	}
-	if !d.state.IsTemporaryWorkspace(workspace) {
+	if !d.state.IsTemporaryWorkspace(targetWorkspace) {
 		return
 	}
-	moduleName, orbitName, err := module.ParseWorkspaceName(workspace)
+	moduleName, orbitName, err := module.ParseWorkspaceName(targetWorkspace)
 	if err != nil {
 		return
 	}
-	if regWorkspace, ok := d.state.tempModuleWorkspace(orbitName, moduleName); !ok || regWorkspace != workspace {
+	if regWorkspace, ok := d.state.tempModuleWorkspace(orbitName, moduleName); !ok || regWorkspace != targetWorkspace {
 		return
 	}
 
 	if ws, err := hypr.ActiveWorkspace(ctx); err == nil && ws != nil {
-		if strings.TrimSpace(ws.Name) == workspace {
+		if strings.TrimSpace(ws.Name) == targetWorkspace {
 			return
 		}
 	}
 
-	count, err := d.workspaceWindowCount(ctx, hypr, workspace)
+	count, err := workspace.WindowCount(ctx, hypr, targetWorkspace)
 	if err != nil {
-		d.state.Logf("temp workspace cleanup %s: %v", workspace, err)
+		d.state.Logf("temp workspace cleanup %s: %v", targetWorkspace, err)
 		return
 	}
 	if count > 0 {
 		return
 	}
 
-	if err := hypr.Dispatch(ctx, "dispatch", "killworkspace", "name:"+workspace); err != nil {
-		d.state.Logf("temp workspace kill %s: %v", workspace, err)
+	if err := hypr.Dispatch(ctx, "dispatch", "killworkspace", "name:"+targetWorkspace); err != nil {
+		d.state.Logf("temp workspace kill %s: %v", targetWorkspace, err)
 		return
 	}
 	d.state.unregisterTempModule(orbitName, moduleName)
 	d.state.InvalidateClients()
-	d.state.Logf("removed temporary workspace %s", workspace)
-}
-
-func (d *Dispatcher) workspaceWindowCount(ctx context.Context, hypr runtime.HyprctlClient, workspace string) (int, error) {
-	workspaces, err := hypr.Workspaces(ctx)
-	if err != nil {
-		return 0, err
-	}
-	for _, ws := range workspaces {
-		if strings.TrimSpace(ws.Name) == workspace {
-			return ws.Windows, nil
-		}
-	}
-	return 0, nil
+	d.state.Logf("removed temporary workspace %s", targetWorkspace)
 }
