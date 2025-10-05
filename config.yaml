@@ -29,8 +29,11 @@ orbits:
 modules:
   code:
     focus:
-      match: "class:^code$"
-      cmd: ["code"]
+      logic: try-all
+      rules:
+        - match: "class:^code$"
+          cmd: ["code"]
+        - match: "class:^(ghostty|Alacritty|kitty)$"
     seed:
       - match: "class:^code$"
         cmd: ["code"]
@@ -38,8 +41,9 @@ modules:
         cmd: ["ghostty"]
   gfx:
     focus:
-      match: "class:^(Firefox|zen)$"
-      cmd: ["zen-browser"]
+      rules:
+        - match: "class:^(Firefox|zen)$"
+          cmd: ["zen-browser"]
     seed:
       - match: "class:^(Firefox|zen)$"
         cmd: ["zen-browser"]
@@ -47,21 +51,24 @@ modules:
         cmd: ["gimp"]
   comm:
     focus:
-      match: "class:^Thunderbird$"
-      cmd: ["thunderbird"]
+      rules:
+        - match: "class:^thunderbird$"
+          cmd: ["thunderbird"]
     seed:
-      - match: "class:^Thunderbird$"
+      - match: "class:^thunderbird$"
         cmd: ["thunderbird"]
       # - match: "class:^TelegramDesktop$"
       #   cmd: ["telegram-desktop"]
   media:
     focus:
-      match: "class:^(mpv)$"
-      cmd: ["mpv"]
+      rules:
+        - match: "class:^(mpv)$"
+          cmd: ["mpv"]
   surf:
     focus:
-      match: "class:^zen"
-      cmd: ["zen-browser"]
+      rules:
+        - match: "class:^zen"
+          cmd: ["zen-browser"]
 
 defaults:
   float: false

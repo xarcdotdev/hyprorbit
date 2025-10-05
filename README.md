@@ -335,21 +335,29 @@ orbits:
 modules:
   code:
     focus:
-      match: "class=.*code"              # Window matcher
-      cmd: ["ghostty", "-T", "Code"]       # Spawn command
+      logic: try-all                     # Evaluate each rule in order
+      rules:
+        - match: "class=.*code"          # Primary window matcher -> no match -> spawn
+          cmd: ["ghostty", "+new-window"]
+        - match: "class=.*kitty"         # Secondary matcher without spawn
   comm:
     focus:
-      match: "title=.*Slack"
-      cmd: ["flatpak", "run", "com.slack.Slack"]
+      rules:
+        - match: "title=.*Slack"
+          cmd: ["flatpak", "run", "com.slack.Slack"]
   gfx:
     focus:
-      match: "class=.*GIMP"
-      cmd: ["gimp"]
+      rules:
+        - match: "class=.*GIMP"
+          cmd: ["gimp"]
 
 defaults:
   float: false          # Default floating behavior
   move: true           # Default move behavior
 ```
+
+- `logic` defaults to `first-match-wins`; set `try-all` to chain through every rule even after an earlier action succeeds.
+- `rules` is an ordered list of matcher/command pairs. Rules without a `cmd` simply attempt to focus or move matching windows.
 
 ### Window Matching
 

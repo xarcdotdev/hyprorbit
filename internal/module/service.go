@@ -153,18 +153,32 @@ func (s *Service) Focus(ctx context.Context, moduleName string, opts FocusOption
 		return nil, err
 	}
 
-	matcher := mod.Focus.Matcher
-	if opts.MatcherOverride != "" {
-		override, err := ParseMatcher(opts.MatcherOverride)
-		if err != nil {
-			return nil, err
-		}
-		matcher = override
-	}
+	rules := mod.Focus.Rules
+	logic := mod.Focus.Logic
 
-	compiled, err := compileMatcher(matcher)
-	if err != nil {
-		return nil, fmt.Errorf("module %s matcher: %w", moduleName, err)
+	if opts.MatcherOverride != "" || len(opts.CmdOverride) > 0 {
+		var matcher config.Matcher
+		if opts.MatcherOverride != "" {
+			matcher, err = ParseMatcher(opts.MatcherOverride)
+			if err != nil {
+				return nil, err
+			}
+		} else if len(rules) > 0 {
+			matcher = rules[0].Matcher
+		}
+		cmd := opts.CmdOverride
+		if len(cmd) == 0 && len(rules) > 0 {
+			cmd = append([]string(nil), rules[0].Cmd...)
+		} else if len(cmd) > 0 {
+			cmd = append([]string(nil), cmd...)
+		}
+		rules = []config.ModuleFocusRuleSpec{{
+			Matcher: matcher,
+			Cmd:     cmd,
+		}}
+		logic = config.ModuleFocusLogicFirstMatchWins
+	} else if len(rules) == 0 {
+		rules = []config.ModuleFocusRuleSpec{{}}
 	}
 
 	allowMove := s.cfg.Defaults.Move
@@ -177,72 +191,138 @@ func (s *Service) Focus(ctx context.Context, moduleName string, opts FocusOption
 		shouldFloat = true
 	}
 
-	spawnCmd := mod.Focus.Cmd
-	if len(opts.CmdOverride) > 0 {
-		spawnCmd = opts.CmdOverride
-	}
-
 	clients, err := s.clients(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	workspaceClients, orbitClients, globalClients := bucketClients(clients, matcher, compiled, workspace, orbitRecord.Name, opts.Global)
+	var firstResult *Result
 
-	if len(workspaceClients) > 0 {
-		client := workspaceClients[0]
-		if shouldFloat && !client.Floating {
-			if err := s.hyprctl.Dispatch(ctx, "togglefloating", "address:"+client.Address); err != nil {
+	for idx, rule := range rules {
+		compiled, err := compileMatcher(rule.Matcher)
+		if err != nil {
+			return nil, fmt.Errorf("module %s focus.rules[%d] matcher: %w", moduleName, idx, err)
+		}
+
+		workspaceClients, orbitClients, globalClients := bucketClients(clients, rule.Matcher, compiled, workspace, orbitRecord.Name, opts.Global)
+
+		if len(workspaceClients) > 0 {
+			client := workspaceClients[0]
+			if shouldFloat && !client.Floating {
+				if err := s.hyprctl.Dispatch(ctx, "togglefloating", "address:"+client.Address); err != nil {
+					return nil, err
+				}
+			}
+			if err := s.hyprctl.FocusWindow(ctx, client.Address); err != nil {
+				return nil, err
+			}
+			res := &Result{Action: "focused", Workspace: workspace}
+			if firstResult == nil {
+				firstResult = res
+			}
+			if logic != config.ModuleFocusLogicTryAll {
+				return res, nil
+			}
+			if idx < len(rules)-1 {
+				s.ResetClientCache()
+				clients, err = s.clients(ctx)
+				if err != nil {
+					return nil, err
+				}
+			}
+			continue
+		}
+
+		if allowMove && len(orbitClients) > 0 {
+			client := orbitClients[0]
+			if err := s.hyprctl.MoveToWorkspace(ctx, client.Address, workspace); err != nil {
+				return nil, err
+			}
+			if shouldFloat && !client.Floating {
+				if err := s.hyprctl.Dispatch(ctx, "togglefloating", "address:"+client.Address); err != nil {
+					return nil, err
+				}
+			}
+			res := &Result{Action: "moved", Workspace: workspace}
+			if firstResult == nil {
+				firstResult = res
+			}
+			if logic != config.ModuleFocusLogicTryAll {
+				return res, nil
+			}
+			if idx < len(rules)-1 {
+				s.ResetClientCache()
+				clients, err = s.clients(ctx)
+				if err != nil {
+					return nil, err
+				}
+			}
+			continue
+		}
+
+		if opts.Global && len(globalClients) > 0 {
+			client := globalClients[0]
+			if err := s.hyprctl.MoveToWorkspace(ctx, client.Address, workspace); err != nil {
+				return nil, err
+			}
+			if shouldFloat && !client.Floating {
+				if err := s.hyprctl.Dispatch(ctx, "togglefloating", "address:"+client.Address); err != nil {
+					return nil, err
+				}
+			}
+			res := &Result{Action: "moved-global", Workspace: workspace}
+			if firstResult == nil {
+				firstResult = res
+			}
+			if logic != config.ModuleFocusLogicTryAll {
+				return res, nil
+			}
+			if idx < len(rules)-1 {
+				s.ResetClientCache()
+				clients, err = s.clients(ctx)
+				if err != nil {
+					return nil, err
+				}
+			}
+			continue
+		}
+
+		if len(rule.Cmd) == 0 {
+			continue
+		}
+
+		activeWS, err := s.hyprctl.ActiveWorkspace(ctx)
+		if err == nil && activeWS != nil && activeWS.Name != workspace {
+			if err := s.hyprctl.SwitchWorkspace(ctx, workspace); err != nil {
 				return nil, err
 			}
 		}
-		if err := s.hyprctl.FocusWindow(ctx, client.Address); err != nil {
-			return nil, err
-		}
-		return &Result{Action: "focused", Workspace: workspace}, nil
-	}
 
-	if allowMove && len(orbitClients) > 0 {
-		client := orbitClients[0]
-		if err := s.hyprctl.MoveToWorkspace(ctx, client.Address, workspace); err != nil {
+		if err := spawnProcess(ctx, rule.Cmd); err != nil {
 			return nil, err
 		}
-		if shouldFloat && !client.Floating {
-			if err := s.hyprctl.Dispatch(ctx, "togglefloating", "address:"+client.Address); err != nil {
+
+		res := &Result{Action: "spawned: " + strings.Join(rule.Cmd, " "), Workspace: workspace}
+		if firstResult == nil {
+			firstResult = res
+		}
+		if logic != config.ModuleFocusLogicTryAll {
+			return res, nil
+		}
+		if idx < len(rules)-1 {
+			s.ResetClientCache()
+			clients, err = s.clients(ctx)
+			if err != nil {
 				return nil, err
 			}
 		}
-		return &Result{Action: "moved", Workspace: workspace}, nil
 	}
 
-	if opts.Global && len(globalClients) > 0 {
-		client := globalClients[0]
-		if err := s.hyprctl.MoveToWorkspace(ctx, client.Address, workspace); err != nil {
-			return nil, err
-		}
-		if shouldFloat && !client.Floating {
-			if err := s.hyprctl.Dispatch(ctx, "togglefloating", "address:"+client.Address); err != nil {
-				return nil, err
-			}
-		}
-		return &Result{Action: "moved-global", Workspace: workspace}, nil
+	if firstResult != nil {
+		return firstResult, nil
 	}
 
-	if len(spawnCmd) == 0 {
-		return nil, fmt.Errorf("module %s: no matching clients and no command to spawn", moduleName)
-	}
-
-	activeWS, err := s.hyprctl.ActiveWorkspace(ctx)
-	if err == nil && activeWS != nil && activeWS.Name != workspace {
-		if err := s.hyprctl.SwitchWorkspace(ctx, workspace); err != nil {
-			return nil, err
-		}
-	}
-	
-	if err := spawnProcess(ctx, spawnCmd); err != nil {
-		return nil, err
-	}
-	return &Result{Action: "spawned", Workspace: workspace}, nil
+	return nil, fmt.Errorf("module %s: no matching clients and no command to spawn", moduleName)
 }
 
 // Jump switches focus to the module workspace inside the active orbit.

@@ -57,7 +57,7 @@ func newInitCommand() *cobra.Command {
 			fmt.Fprintf(out, "%sTip:%s Explore Waybar + keybinding examples at: \n", color(ansiAccent), color(ansiReset))
 			fmt.Fprintf(out, "%shttps://github.com/xarcdotdev/hyprorbit/examples%s\n\n", color(ansiAccent), color(ansiReset))
 
-			ok, err := promptYesNo(out, "Reset Hyprland workspaces to match your first orbit/module?", false)
+			ok, err := promptYesNo(out, "Reset Hyprland workspaces to match your first orbit/module [RECOMMENDED]?", false)
 			if err != nil {
 				return err
 			}
@@ -107,7 +107,7 @@ func ensureDefaultConfigFile(out interface{ Write([]byte) (int, error) }, path s
 	if exists {
 		question = fmt.Sprintf("Regenerate default config at %s", path)
 	} else {
-		question = fmt.Sprintf("Create default config at %s", path)
+		question = fmt.Sprintf("Create default config at %s [RECOMMENDED]", path)
 	}
 	create, err := promptYesNo(out, question, !exists)
 	if err != nil {
@@ -324,8 +324,8 @@ orbits:
 modules:
   code:
     focus:
-      match: "class:^code$"
-      cmd: ["code"]
+      - match: "class:^code$"
+        cmd: ["code"]
     seed:
       - match: "class:^code$"
         cmd: ["code"]
@@ -333,8 +333,8 @@ modules:
         cmd: ["ghostty"]
   gfx:
     focus:
-      match: "class:^(Firefox|zen)$"
-      cmd: ["zen-browser"]
+      - match: "class:^(Firefox|zen)$"
+        cmd: ["zen-browser"]
     seed:
       - match: "class:^(Firefox|zen)$"
         cmd: ["zen-browser"]
@@ -342,19 +342,19 @@ modules:
         cmd: ["gimp"]
   comm:
     focus:
-      match: "class:^Thunderbird$"
-      cmd: ["thunderbird"]
+      - match: "class:^thunderbird$"
+        cmd: ["thunderbird"]
     seed:
-      - match: "class:^Thunderbird$"
+      - match: "class:^thunderbird$"
         cmd: ["thunderbird"]
   media:
     focus:
-      match: "class:^(mpv)$"
-      cmd: ["mpv"]
+      - match: "class:^(mpv)$"
+        cmd: ["mpv"]
   surf:
     focus:
-      match: "class:^zen"
-      cmd: ["zen-browser"]
+      - match: "class:^zen"
+        cmd: ["zen-browser"]
 
 defaults:
   float: false

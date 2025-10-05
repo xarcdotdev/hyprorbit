@@ -38,10 +38,24 @@ type ModuleRecord struct {
 
 // ModuleFocusSpec captures matcher and launch behavior.
 type ModuleFocusSpec struct {
-	Matcher       Matcher
-	Cmd           []string
+	Rules         []ModuleFocusRuleSpec
+	Logic         ModuleFocusLogic
 	WorkspaceType string
 }
+
+// ModuleFocusRuleSpec represents a single matcher/command pair.
+type ModuleFocusRuleSpec struct {
+	Matcher Matcher
+	Cmd     []string
+}
+
+// ModuleFocusLogic defines how focus rules are processed.
+type ModuleFocusLogic string
+
+const (
+	ModuleFocusLogicFirstMatchWins ModuleFocusLogic = "first-match-wins"
+	ModuleFocusLogicTryAll         ModuleFocusLogic = "try-all"
+)
 
 // SeedSpec defines individual seed steps.
 type SeedSpec struct {
@@ -163,14 +177,35 @@ func BuildEffective(source string, cfg *Config) (*EffectiveConfig, error) {
 
 	for _, name := range names {
 		mod := cfg.Modules[name]
-		focusMatcher, err := parseMatcher(mod.Focus.Match)
+
+		logic, err := parseModuleFocusLogic(mod.Focus.Logic)
 		if err != nil {
-			return nil, fmt.Errorf("module %q focus matcher: %w", name, err)
+			return nil, fmt.Errorf("module %q focus logic: %w", name, err)
+		}
+
+		ruleConfigs := mod.Focus.Rules
+		if len(ruleConfigs) == 0 {
+			ruleConfigs = []ModuleFocusRule{{
+				Match: mod.Focus.Match,
+				Cmd:   append([]string(nil), mod.Focus.Cmd...),
+			}}
+		}
+
+		rules := make([]ModuleFocusRuleSpec, 0, len(ruleConfigs))
+		for idx, rule := range ruleConfigs {
+			matcher, err := parseMatcher(rule.Match)
+			if err != nil {
+				return nil, fmt.Errorf("module %q focus.rules[%d] matcher: %w", name, idx, err)
+			}
+			rules = append(rules, ModuleFocusRuleSpec{
+				Matcher: matcher,
+				Cmd:     append([]string(nil), rule.Cmd...),
+			})
 		}
 
 		focus := ModuleFocusSpec{
-			Matcher:       focusMatcher,
-			Cmd:           append([]string(nil), mod.Focus.Cmd...),
+			Rules:         rules,
+			Logic:         logic,
 			WorkspaceType: mod.Focus.WorkspaceType,
 		}
 
@@ -251,6 +286,20 @@ func parseMatcher(input string) (Matcher, error) {
 	}
 
 	return Matcher{Field: fieldName, Expr: selector.Pattern, Raw: trimmed}, nil
+}
+
+func parseModuleFocusLogic(value string) (ModuleFocusLogic, error) {
+	original := value
+	trimmed := strings.TrimSpace(strings.ToLower(value))
+	if trimmed == "" {
+		return ModuleFocusLogicFirstMatchWins, nil
+	}
+	switch ModuleFocusLogic(trimmed) {
+	case ModuleFocusLogicFirstMatchWins, ModuleFocusLogicTryAll:
+		return ModuleFocusLogic(trimmed), nil
+	default:
+		return "", fmt.Errorf("invalid value %q (expected %q or %q)", original, ModuleFocusLogicFirstMatchWins, ModuleFocusLogicTryAll)
+	}
 }
 
 // ParseMatcherString is exported for reuse by other packages (e.g. CLI overrides).
@@ -490,6 +539,11 @@ func collectWarnings(cfg *Config) []string {
 		}
 		if len(mod.Focus.Extras) > 0 {
 			warnings = append(warnings, sortedKeysMessage("module "+name+" focus", mod.Focus.Extras))
+		}
+		for idx, rule := range mod.Focus.Rules {
+			if len(rule.Extras) > 0 {
+				warnings = append(warnings, sortedKeysMessage(fmt.Sprintf("module %s focus.rules[%d]", name, idx), rule.Extras))
+			}
 		}
 		for idx, seed := range mod.Seed {
 			if len(seed.Extras) > 0 {

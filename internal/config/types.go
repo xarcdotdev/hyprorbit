@@ -41,10 +41,19 @@ type Module struct {
 
 // ModuleFocus guides module focus-or-launch behavior.
 type ModuleFocus struct {
-	Match         string         `yaml:"match"`
-	Cmd           []string       `yaml:"cmd"`
-	WorkspaceType string         `yaml:"workspace_type"`
-	Extras        map[string]any `yaml:",inline"`
+	Match         string            `yaml:"match"`
+	Cmd           []string          `yaml:"cmd"`
+	Logic         string            `yaml:"logic"`
+	Rules         []ModuleFocusRule `yaml:"rules"`
+	WorkspaceType string            `yaml:"workspace_type"`
+	Extras        map[string]any    `yaml:",inline"`
+}
+
+// ModuleFocusRule holds a single matcher/command pair for focus orchestration.
+type ModuleFocusRule struct {
+	Match  string         `yaml:"match"`
+	Cmd    []string       `yaml:"cmd"`
+	Extras map[string]any `yaml:",inline"`
 }
 
 // SeedEntry mirrors focus overrides used when seeding a module.
