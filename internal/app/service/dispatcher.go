@@ -788,10 +788,44 @@ func (d *Dispatcher) resetWorkspaces(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("workspace reset: %w", err)
 	}
+	svc, err := d.requireModuleService()
+	if err != nil {
+		return fmt.Errorf("workspace reset: %w", err)
+	}
+	record, err := svc.ActiveOrbit(ctx)
+	if err != nil {
+		return fmt.Errorf("workspace reset: failed to get active orbit: %w", err)
+	}
+	if record == nil || util.IsEmptyOrWhitespace(record.Name) {
+		return fmt.Errorf("workspace reset: active orbit not available")
+	}
+	primaryWorkspace, err := d.jumpToActiveModuleWorkspace(ctx)
+	if err != nil {
+		return fmt.Errorf("workspace reset: %w", err)
+	}
+	orbitName := strings.TrimSpace(record.Name)
+	if err := d.alignMonitorsToOrbit(ctx, orbitName, primaryWorkspace); err != nil {
+		return fmt.Errorf("workspace reset: %w", err)
+	}
 	workspaces, err := hypr.Workspaces(ctx)
 	if err != nil {
 		return fmt.Errorf("workspace reset: failed to list workspaces: %w", err)
 	}
+	moduleNames := svc.ModuleNames()
+	safeSet := make(map[string]struct{}, len(moduleNames)+1)
+	if primary := strings.TrimSpace(primaryWorkspace); primary != "" {
+		safeSet[primary] = struct{}{}
+	}
+	for _, moduleName := range moduleNames {
+		workspaceName := module.WorkspaceName(moduleName, orbitName)
+		safeSet[workspaceName] = struct{}{}
+	}
+	safeList := make([]string, 0, len(safeSet))
+	for ws := range safeSet {
+		safeList = append(safeList, ws)
+	}
+	sort.Strings(safeList)
+	fmt.Fprintf(os.Stdout, "[hyprorbit] workspace reset: safe workspaces: %s\n", strings.Join(safeList, ", "))
 	targets := make([]string, 0, len(workspaces))
 	for _, ws := range workspaces {
 		name := strings.TrimSpace(ws.Name)
@@ -801,28 +835,18 @@ func (d *Dispatcher) resetWorkspaces(ctx context.Context) error {
 		if strings.HasPrefix(name, "special") {
 			continue
 		}
+		if _, keep := safeSet[name]; keep {
+			continue
+		}
 		targets = append(targets, name)
 	}
 	if len(targets) == 0 {
+		fmt.Fprintf(os.Stdout, "[hyprorbit] workspace reset: no workspaces to kill\n")
 		return nil
 	}
-	svc, err := d.requireModuleService()
-	if err != nil {
-		return fmt.Errorf("workspace reset: %w", err)
-	}
-	safeWorkspace := ""
-	if res, err := d.createModuleWorkspace(ctx, svc, hypr, ""); err != nil {
-		return fmt.Errorf("workspace reset: failed to prepare safe workspace: %w", err)
-	} else {
-		safeWorkspace = strings.TrimSpace(res.Workspace)
-	}
-	fmt.Fprintf(os.Stdout, "[hyprorbit] workspace reset: prepared safe workspace %q\n", safeWorkspace)
 	fmt.Fprintf(os.Stdout, "[hyprorbit] workspace reset: workspaces scheduled for kill: %s\n", strings.Join(targets, ", "))
 	commands := make([][]string, 0, len(targets))
 	for _, name := range targets {
-		if safeWorkspace != "" && name == safeWorkspace {
-			continue
-		}
 		nameArg := "name:" + name
 		if strings.ContainsAny(name, " \t\";") {
 			nameArg = fmt.Sprintf("name:%q", name)
@@ -850,18 +874,36 @@ func (d *Dispatcher) alignMonitorsToOrbit(ctx context.Context, orbitName, primar
 	if hypr == nil {
 		return nil
 	}
+	modSvc := d.state.ModuleService()
+	if modSvc == nil {
+		return nil
+	}
+	moduleNames := modSvc.ModuleNames()
+	if len(moduleNames) == 0 {
+		return nil
+	}
 	monitors, err := hypr.Monitors(ctx)
 	if err != nil {
 		return fmt.Errorf("align monitors: failed to list monitors: %w", err)
 	}
 	if len(monitors) == 0 {
+		res, err := modSvc.Jump(ctx, moduleNames[0])
+		if err != nil {
+			return fmt.Errorf("align monitors: failed to jump to module %q: %w", moduleNames[0], err)
+		}
+		d.recordModuleResult(res)
 		return nil
 	}
-	modSvc := d.state.ModuleService()
-	if modSvc == nil {
-		return nil
+	orderedModules := append([]string(nil), moduleNames...)
+	if !util.IsEmptyOrWhitespace(primaryWorkspace) {
+		primaryWorkspace = strings.TrimSpace(primaryWorkspace)
+		for idx, name := range moduleNames {
+			if module.WorkspaceName(name, orbitName) == primaryWorkspace {
+				orderedModules = append(moduleNames[idx:], moduleNames[:idx]...)
+				break
+			}
+		}
 	}
-
 	var focusedMonitor string
 	for _, mon := range monitors {
 		if mon.Focused {
@@ -869,46 +911,27 @@ func (d *Dispatcher) alignMonitorsToOrbit(ctx context.Context, orbitName, primar
 			break
 		}
 	}
-
-	for _, mon := range monitors {
-		current := strings.TrimSpace(mon.ActiveWorkspace.Name)
-		if current == "" {
-			continue
-		}
-		if primaryWorkspace != "" && current == primaryWorkspace {
-			continue
-		}
-		moduleName, _, err := module.ParseWorkspaceName(current)
+	for idx, mon := range monitors {
+		moduleName := orderedModules[idx%len(orderedModules)]
+		res, err := modSvc.FocusMonitorJump(ctx, mon.Name, moduleName)
 		if err != nil {
-			continue
-		}
-		moduleName = strings.TrimSpace(moduleName)
-		if moduleName == "" {
-			continue
-		}
-		if _, ok := modSvc.Module(moduleName); !ok {
-			continue
-		}
-		target := module.WorkspaceName(moduleName, orbitName)
-		if target == current {
-			continue
-		}
-		if err := hypr.Dispatch(ctx, "focusmonitor", mon.Name); err != nil {
-			return fmt.Errorf("align monitors: failed to focus monitor %q: %w", mon.Name, err)
-		}
-		res, err := modSvc.Jump(ctx, moduleName)
-		if err != nil {
-			return fmt.Errorf("align monitors: failed to jump to module %q on monitor %q: %w", moduleName, mon.Name, err)
+			return fmt.Errorf("align monitors: failed to jump monitor %q to module %q: %w", mon.Name, moduleName, err)
 		}
 		d.recordModuleResult(res)
+		workspace := ""
+		if res != nil {
+			workspace = strings.TrimSpace(res.Workspace)
+		}
+		if workspace == "" {
+			workspace = module.WorkspaceName(moduleName, orbitName)
+		}
+		fmt.Fprintf(os.Stdout, "[hyprorbit] align monitors: monitor %s -> %s (%s)\n", mon.Name, moduleName, workspace)
 	}
-
 	if focusedMonitor != "" {
 		if err := hypr.Dispatch(ctx, "focusmonitor", focusedMonitor); err != nil {
 			return fmt.Errorf("align monitors: failed to restore focus to monitor %q: %w", focusedMonitor, err)
 		}
 	}
-
 	return nil
 }
 

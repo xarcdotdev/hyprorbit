@@ -154,17 +154,13 @@ func ensureWaybarConfigFile(out interface{ Write([]byte) (int, error) }, path st
 }
 
 func resetWorkspaces(ctx context.Context, client *ctl.Client, out interface{ Write([]byte) (int, error) }) error {
-	spinner := newSpinner(out, "Sweeping workspaces", time.Millisecond*80)
+	spinner := newSpinner(out, "Aligning orbit", time.Millisecond*80)
 	spinner.Start()
 	defer spinner.Stop()
 
+	spinner.Update("Sweeping workspaces")
 	if err := client.WorkspaceReset(ctx); err != nil {
 		return fmt.Errorf("failed to reset workspaces: %w", err)
-	}
-
-	spinner.Update("Aligning orbit")
-	if err := client.WorkspaceAlign(ctx); err != nil {
-		return fmt.Errorf("failed to align workspace focus: %w", err)
 	}
 
 	spinner.StopWithMessage(fmt.Sprintf("%s✓%s Workspaces reset to orbit baseline", color(ansiSuccess), color(ansiReset)))

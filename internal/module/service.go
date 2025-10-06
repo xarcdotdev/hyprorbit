@@ -552,3 +552,30 @@ func (s *Service) ResetClientCache() {
 	s.clientCache = nil
 	s.clientErr = nil
 }
+
+// FocusMonitorJump focuses the provided monitor and jumps to the module in a single batch.
+func (s *Service) FocusMonitorJump(ctx context.Context, monitorName, moduleName string) (*Result, error) {
+	monitorName = strings.TrimSpace(monitorName)
+	moduleName = strings.TrimSpace(moduleName)
+	if monitorName == "" {
+		return nil, fmt.Errorf("focus monitor jump: monitor name missing")
+	}
+	if moduleName == "" {
+		return nil, fmt.Errorf("focus monitor jump: module name missing")
+	}
+	if s.hyprctl == nil {
+		return nil, fmt.Errorf("focus monitor jump: hyprctl client unavailable")
+	}
+	_, orbitRecord, workspace, err := s.workspace(ctx, moduleName)
+	if err != nil {
+		return nil, err
+	}
+	commands := [][]string{
+		{"focusmonitor", "name:" + monitorName},
+		{"workspace", "name:" + workspace},
+	}
+	if _, err := s.hyprctl.BatchDispatch(ctx, commands...); err != nil {
+		return nil, fmt.Errorf("focus monitor jump: monitor %q module %q: %w", monitorName, moduleName, err)
+	}
+	return &Result{Action: "jumped", Workspace: workspace, Orbit: orbitRecord.Name}, nil
+}
