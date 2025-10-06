@@ -1011,20 +1011,31 @@ func (d *Dispatcher) jumpToPrimaryModuleWorkspace(ctx context.Context) (string, 
 	if activeOrbit != nil {
 		orbitName = strings.TrimSpace(activeOrbit.Name)
 	}
+	d.debugf("jumpToPrimaryModuleWorkspace: active orbit=%q", orbitName)
 
 	var currentModule string
 	if name, err := workspace.ActiveName(ctx, hypr); err == nil {
+		d.debugf("jumpToPrimaryModuleWorkspace: active workspace=%q", name)
 		if moduleName, _, err := module.ParseWorkspaceName(name); err == nil {
 			currentModule = moduleName
+			d.debugf("jumpToPrimaryModuleWorkspace: parsed current module=%q", currentModule)
+		} else {
+			d.debugf("jumpToPrimaryModuleWorkspace: failed to parse workspace name: %v", err)
 		}
+	} else {
+		d.debugf("jumpToPrimaryModuleWorkspace: failed to get active workspace: %v", err)
 	}
 
 	var lastActive string
 	if orbitName != "" {
 		lastActive = strings.TrimSpace(d.state.LastActiveModule(orbitName))
+		d.debugf("jumpToPrimaryModuleWorkspace: last active module for orbit %q: %q", orbitName, lastActive)
+	} else {
+		d.debugf("jumpToPrimaryModuleWorkspace: no active orbit, cannot retrieve last active module")
 	}
 
 	preferLastActive := d.state.PreferLastActiveFirst()
+	d.debugf("jumpToPrimaryModuleWorkspace: preference=last-active-first: %v", preferLastActive)
 
 	candidates := make([]string, 0, 2)
 	if preferLastActive {
@@ -1032,28 +1043,35 @@ func (d *Dispatcher) jumpToPrimaryModuleWorkspace(ctx context.Context) (string, 
 	} else {
 		candidates = append(candidates, currentModule, lastActive)
 	}
+	d.debugf("jumpToPrimaryModuleWorkspace: candidate list (ordered): %v", candidates)
 
 	seen := make(map[string]struct{}, len(candidates))
-	for _, candidate := range candidates {
+	for i, candidate := range candidates {
 		candidate = strings.TrimSpace(candidate)
 		if candidate == "" {
+			d.debugf("jumpToPrimaryModuleWorkspace: candidate[%d] is empty, skipping", i)
 			continue
 		}
 		if _, ok := seen[candidate]; ok {
+			d.debugf("jumpToPrimaryModuleWorkspace: candidate[%d] %q already seen, skipping", i, candidate)
 			continue
 		}
 		seen[candidate] = struct{}{}
 		if _, ok := modSvc.Module(candidate); !ok {
+			d.debugf("jumpToPrimaryModuleWorkspace: candidate[%d] %q is not a configured module, skipping", i, candidate)
 			continue
 		}
+		d.debugf("jumpToPrimaryModuleWorkspace: attempting to jump to candidate[%d] %q", i, candidate)
 		res, err := modSvc.Jump(ctx, candidate)
 		if err != nil {
 			return "", fmt.Errorf("failed to jump to module %q: %w", candidate, err)
 		}
 		d.recordModuleResult(res)
+		d.debugf("jumpToPrimaryModuleWorkspace: successfully jumped to workspace=%q", res.Workspace)
 		return strings.TrimSpace(res.Workspace), nil
 	}
 
+	d.debugf("jumpToPrimaryModuleWorkspace: no valid candidates found, returning empty")
 	return "", nil
 }
 
