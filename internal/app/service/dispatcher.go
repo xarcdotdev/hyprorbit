@@ -799,7 +799,7 @@ func (d *Dispatcher) resetWorkspaces(ctx context.Context) error {
 	if record == nil || util.IsEmptyOrWhitespace(record.Name) {
 		return fmt.Errorf("workspace reset: active orbit not available")
 	}
-	primaryWorkspace, err := d.jumpToPrimaryModuleWorkspace(ctx)
+	primaryWorkspace, err := d.jumpToFirstModuleWorkspace(ctx, modSvc)
 	if err != nil {
 		return fmt.Errorf("workspace reset: %w", err)
 	}
@@ -999,6 +999,22 @@ func (d *Dispatcher) jumpToPrimaryModuleWorkspace(ctx context.Context) (string, 
 	}
 
 	return "", nil
+}
+
+// jumpToFirstModuleWorkspace jumps to the first configured module workspace for the active orbit.
+// This provides deterministic workspace selection, ignoring user preferences and history.
+func (d *Dispatcher) jumpToFirstModuleWorkspace(ctx context.Context, modSvc *module.Service) (string, error) {
+	moduleNames := modSvc.ModuleNames()
+	if len(moduleNames) == 0 {
+		return "", fmt.Errorf("no modules configured")
+	}
+
+	result, err := modSvc.Jump(ctx, moduleNames[0])
+	if err != nil {
+		return "", fmt.Errorf("failed to jump to first module %q: %w", moduleNames[0], err)
+	}
+	d.recordModuleResult(result)
+	return strings.TrimSpace(result.Workspace), nil
 }
 
 func (d *Dispatcher) alignWorkspace(ctx context.Context) error {
