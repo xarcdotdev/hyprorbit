@@ -157,8 +157,8 @@ func (c *Client) FocusWindow(ctx context.Context, address string) error {
 	return c.Dispatch(ctx, "focuswindow", "address:"+address)
 }
 
-// MoveToWorkspace moves a window to the target workspace via dispatch.
-func (c *Client) MoveToWorkspace(ctx context.Context, windowAddr, workspace string) error {
+// MoveToWorkspaceFollow moves a window to the target workspace and follows it.
+func (c *Client) MoveToWorkspaceFollow(ctx context.Context, windowAddr, workspace string) error {
 	workspace = strings.TrimSpace(workspace)
 	if workspace == "" {
 		return fmt.Errorf("movetoworkspace: workspace name missing")
@@ -171,6 +171,22 @@ func (c *Client) MoveToWorkspace(ctx context.Context, windowAddr, workspace stri
 	}
 
 	return c.Dispatch(ctx, "movetoworkspace", "name:"+workspace)
+}
+
+// MoveToWorkspaceSilent moves a window to the target workspace without following it.
+func (c *Client) MoveToWorkspaceSilent(ctx context.Context, windowAddr, workspace string) error {
+	workspace = strings.TrimSpace(workspace)
+	if workspace == "" {
+		return fmt.Errorf("movetoworkspacesilent: workspace name missing")
+	}
+
+	if addr := strings.TrimSpace(windowAddr); addr != "" {
+		if err := c.FocusWindow(ctx, addr); err != nil {
+			return fmt.Errorf("movetoworkspacesilent: focus %s: %w", addr, err)
+		}
+	}
+
+	return c.Dispatch(ctx, "movetoworkspacesilent", "name:"+workspace)
 }
 
 // SwitchWorkspace switches focus to the named workspace.

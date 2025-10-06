@@ -655,11 +655,11 @@ func validateMoveTarget(targetRef string) error {
 }
 
 // moveClientsToTarget moves all clients to the target, focusing the last one if not silent.
-func (d *Dispatcher) moveClientsToTarget(ctx context.Context, svc *module.Service, hypr runtime.HyprctlClient, clients []hyprctl.ClientInfo, targetRef string, silent bool) ([]windowMoveResult, error) {
+func (d *Dispatcher) moveClientsToTarget(ctx context.Context, svc *module.Service, hypr runtime.HyprctlClient, clients []hyprctl.ClientInfo, targetRef string, follow bool) ([]windowMoveResult, error) {
 	results := make([]windowMoveResult, 0, len(clients))
 	for idx, client := range clients {
-		focus := !silent && idx == len(clients)-1
-		res, err := d.moveClientToModule(ctx, svc, hypr, client, targetRef, focus)
+		follow := !follow && idx == len(clients)-1
+		res, err := d.moveClientToModule(ctx, svc, hypr, client, targetRef, follow)
 		if err != nil {
 			return nil, err
 		}
@@ -918,14 +918,14 @@ func (d *Dispatcher) alignMonitorsToOrbit(ctx context.Context, orbitName, primar
 			return fmt.Errorf("align monitors: failed to jump monitor %q to module %q: %w", mon.Name, moduleName, err)
 		}
 		d.recordModuleResult(res)
-		workspace := ""
-		if res != nil {
-			workspace = strings.TrimSpace(res.Workspace)
-		}
-		if workspace == "" {
-			workspace = module.WorkspaceName(moduleName, orbitName)
-		}
-		fmt.Fprintf(os.Stdout, "[hyprorbit] align monitors: monitor %s -> %s (%s)\n", mon.Name, moduleName, workspace)
+		// workspace := ""
+		// if res != nil {
+		// 	workspace = strings.TrimSpace(res.Workspace)
+		// }
+		// if workspace == "" {
+		// 	workspace = module.WorkspaceName(moduleName, orbitName)
+		// }
+		// fmt.Fprintf(os.Stdout, "[hyprorbit] align monitors: monitor %s -> %s (%s)\n", mon.Name, moduleName, workspace)
 	}
 	if focusedMonitor != "" {
 		if err := hypr.Dispatch(ctx, "focusmonitor", focusedMonitor); err != nil {
@@ -1025,7 +1025,7 @@ func (d *Dispatcher) alignWorkspace(ctx context.Context) error {
 		}
 
 		clients := d.collectClients(ctx)
-		moveErr := workspace.MoveClients(ctx, hypr, clients, targetWorkspace)
+		moveErr := workspace.MoveClients(ctx, hypr, clients, targetWorkspace, false)
 		if moveErr != nil {
 			return fmt.Errorf("workspace align: failed to move windows to %q: %w", targetWorkspace, moveErr)
 		}
@@ -1038,7 +1038,7 @@ func (d *Dispatcher) alignWorkspace(ctx context.Context) error {
 	return nil
 }
 
-func (d *Dispatcher) moveClientToModule(ctx context.Context, svc *module.Service, hypr runtime.HyprctlClient, client hyprctl.ClientInfo, targetRef string, focus bool) (windowMoveResult, error) {
+func (d *Dispatcher) moveClientToModule(ctx context.Context, svc *module.Service, hypr runtime.HyprctlClient, client hyprctl.ClientInfo, targetRef string, follow bool) (windowMoveResult, error) {
 	var result windowMoveResult
 	client = window.SanitizeClient(client)
 	if client.Address == "" {
@@ -1051,14 +1051,8 @@ func (d *Dispatcher) moveClientToModule(ctx context.Context, svc *module.Service
 		return result, err
 	}
 
-	if err := workspace.MoveClients(ctx, hypr, []hyprctl.ClientInfo{client}, target.Workspace); err != nil {
+	if err := workspace.MoveClients(ctx, hypr, []hyprctl.ClientInfo{client}, target.Workspace, follow); err != nil {
 		return result, err
-	}
-
-	if focus && strings.TrimSpace(target.Workspace) != "" {
-		if err := hypr.SwitchWorkspace(ctx, target.Workspace); err != nil {
-			return result, err
-		}
 	}
 
 	d.state.recordWorkspaceActivation(target.Workspace)
@@ -1069,7 +1063,7 @@ func (d *Dispatcher) moveClientToModule(ctx context.Context, svc *module.Service
 	result.Orbit = target.Orbit
 	result.Created = target.Created
 	result.Temporary = target.Temporary
-	result.Focused = focus
+	result.Focused = follow
 	if result.Module == "" {
 		if moduleName, _, err := module.ParseWorkspaceName(target.Workspace); err == nil {
 			result.Module = moduleName

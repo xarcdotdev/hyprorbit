@@ -57,7 +57,8 @@ type HyprctlClient interface {
 	BatchDispatch(ctx context.Context, dispatches ...[]string) ([]hyprctl.BatchResult, error)
 	SwitchWorkspace(ctx context.Context, workspace string) error
 	FocusWindow(ctx context.Context, address string) error
-	MoveToWorkspace(ctx context.Context, windowAddr, workspace string) error
+	MoveToWorkspaceFollow(ctx context.Context, windowAddr, workspace string) error
+	MoveToWorkspaceSilent(ctx context.Context, windowAddr, workspace string) error
 }
 
 // Bootstrap assembles the runtime dependencies for a CLI invocation.

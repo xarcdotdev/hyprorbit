@@ -26,11 +26,14 @@ func EnsureExists(ctx context.Context, hypr runtime.HyprctlClient, target, origi
 }
 
 // MoveClients moves multiple clients to a target workspace.
-func MoveClients(ctx context.Context, hypr runtime.HyprctlClient, clients []hyprctl.ClientInfo, target string) error {
+// If follow is true and there's only one client, it follows the window to the destination.
+// If there are multiple clients, all but the last are moved silently, and the last follows if follow is true.
+func MoveClients(ctx context.Context, hypr runtime.HyprctlClient, clients []hyprctl.ClientInfo, target string, follow bool) error {
 	if target == "" {
 		return nil
 	}
 	var firstErr error
+	var validClients []hyprctl.ClientInfo
 	for _, client := range clients {
 		if client.Address == "" {
 			continue
@@ -42,7 +45,18 @@ func MoveClients(ctx context.Context, hypr runtime.HyprctlClient, clients []hypr
 		if strings.HasPrefix(name, "special") {
 			continue
 		}
-		if err := hypr.MoveToWorkspace(ctx, client.Address, target); err != nil && firstErr == nil {
+		validClients = append(validClients, client)
+	}
+
+	for idx, client := range validClients {
+		isLast := idx == len(validClients)-1
+		var err error
+		if isLast && follow {
+			err = hypr.MoveToWorkspaceFollow(ctx, client.Address, target)
+		} else {
+			err = hypr.MoveToWorkspaceSilent(ctx, client.Address, target)
+		}
+		if err != nil && firstErr == nil {
 			firstErr = err
 		}
 	}

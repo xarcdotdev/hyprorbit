@@ -235,7 +235,7 @@ func (s *Service) Focus(ctx context.Context, moduleName string, opts FocusOption
 
 		if allowMove && len(orbitClients) > 0 {
 			client := orbitClients[0]
-			if err := s.hyprctl.MoveToWorkspace(ctx, client.Address, workspace); err != nil {
+			if err := s.hyprctl.MoveToWorkspaceFollow(ctx, client.Address, workspace); err != nil {
 				return nil, err
 			}
 			if shouldFloat && !client.Floating {
@@ -262,7 +262,7 @@ func (s *Service) Focus(ctx context.Context, moduleName string, opts FocusOption
 
 		if opts.Global && len(globalClients) > 0 {
 			client := globalClients[0]
-			if err := s.hyprctl.MoveToWorkspace(ctx, client.Address, workspace); err != nil {
+			if err := s.hyprctl.MoveToWorkspaceFollow(ctx, client.Address, workspace); err != nil {
 				return nil, err
 			}
 			if shouldFloat && !client.Floating {
