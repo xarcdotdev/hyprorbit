@@ -1014,9 +1014,13 @@ func (d *Dispatcher) jumpToPrimaryModuleWorkspace(ctx context.Context) (string, 
 	}
 	d.debugf("jumpToPrimaryModuleWorkspace: active orbit=%q", orbitName)
 
+	// Determine current Module and Monitor for finding out last active Module
 	var currentModule string
-	if name, err := workspace.ActiveName(ctx, hypr); err == nil {
-		d.debugf("jumpToPrimaryModuleWorkspace: active workspace=%q", name)
+	var currentMonitor string
+	if ws, err := hypr.ActiveWorkspace(ctx); err == nil && ws != nil {
+		name := strings.TrimSpace(ws.Name)
+		currentMonitor = strings.TrimSpace(ws.Monitor)
+		d.debugf("jumpToPrimaryModuleWorkspace: active workspace=%q monitor=%q", name, currentMonitor)
 		if moduleName, _, err := module.ParseWorkspaceName(name); err == nil {
 			currentModule = moduleName
 			d.debugf("jumpToPrimaryModuleWorkspace: parsed current module=%q", currentModule)
@@ -1026,11 +1030,10 @@ func (d *Dispatcher) jumpToPrimaryModuleWorkspace(ctx context.Context) (string, 
 	} else {
 		d.debugf("jumpToPrimaryModuleWorkspace: failed to get active workspace: %v", err)
 	}
-
 	var lastActive string
 	if orbitName != "" {
-		lastActive = strings.TrimSpace(d.state.LastActiveModule(orbitName))
-		d.debugf("jumpToPrimaryModuleWorkspace: last active module for orbit %q: %q", orbitName, lastActive)
+		lastActive = strings.TrimSpace(d.state.LastActiveModule(orbitName, currentMonitor))
+		d.debugf("jumpToPrimaryModuleWorkspace: last active module for orbit %q monitor=%q: %q", orbitName, currentMonitor, lastActive)
 	} else {
 		d.debugf("jumpToPrimaryModuleWorkspace: no active orbit, cannot retrieve last active module")
 	}
@@ -1293,8 +1296,11 @@ func (d *Dispatcher) selectModuleName(names []string, current, spec string) (str
 
 func (d *Dispatcher) currentModuleForOrbit(ctx context.Context, hypr runtime.HyprctlClient, orbitName string) string {
 	orbitName = strings.TrimSpace(orbitName)
+	var monitorName string
 	if hypr != nil {
-		if name, err := workspace.ActiveName(ctx, hypr); err == nil {
+		if ws, err := hypr.ActiveWorkspace(ctx); err == nil && ws != nil {
+			name := strings.TrimSpace(ws.Name)
+			monitorName = strings.TrimSpace(ws.Monitor)
 			if moduleName, orbit, err := module.ParseWorkspaceName(name); err == nil && orbit == orbitName {
 				return moduleName
 			}
@@ -1303,7 +1309,7 @@ func (d *Dispatcher) currentModuleForOrbit(ctx context.Context, hypr runtime.Hyp
 	if d.state == nil {
 		return ""
 	}
-	return strings.TrimSpace(d.state.LastActiveModule(orbitName))
+	return strings.TrimSpace(d.state.LastActiveModule(orbitName, monitorName))
 }
 
 func (d *Dispatcher) recordModuleResult(result *module.Result) {

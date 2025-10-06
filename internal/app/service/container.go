@@ -20,6 +20,11 @@ import (
 
 const snapshotQueryTimeout = 1200 * time.Millisecond
 
+type orbitActivityRecord struct {
+	LastModule  string
+	Monitors map[string]string
+}
+
 // DaemonState aggregates long-lived daemon dependencies for hyprorbitd.
 type DaemonState struct {
 	opts       Options
@@ -33,7 +38,7 @@ type DaemonState struct {
 	hyprctl   runtime.HyprctlClient
 
 	orbitActivityMu sync.RWMutex
-	orbitActivity   map[string]string
+	orbitActivity   map[string]orbitActivityRecord
 
 	tempModulesMu sync.RWMutex
 	tempModules   map[string][]string
@@ -103,7 +108,7 @@ func NewDaemonState(ctx context.Context, opts Options) (*DaemonState, error) {
 		orbitSvc:      orbitSvc,
 		moduleSvc:     moduleSvc,
 		hyprctl:       hyprClient,
-		orbitActivity: make(map[string]string, len(cfg.Orbits)),
+		orbitActivity: make(map[string]orbitActivityRecord, len(cfg.Orbits)),
 		tempModules:   make(map[string][]string),
 		broadcaster:   NewStatusBroadcaster(0),
 		logger:        func(string, ...any) {},
@@ -349,23 +354,32 @@ func (s *DaemonState) buildSnapshot(ctx context.Context) (*StatusSnapshot, error
 	snapshot.Module = status.Module
 	snapshot.Orbit = &status.Orbit
 	if snapshot.Orbit != nil {
-		s.recordActiveModule(snapshot.Module, snapshot.Orbit.Name)
+		s.recordActiveModule(snapshot.Module, snapshot.Orbit.Name, snapshot.Monitor)
 	}
 	return snapshot, nil
 }
 
-func (s *DaemonState) recordActiveModule(moduleName, orbitName string) {
+func (s *DaemonState) recordActiveModule(moduleName, orbitName, monitorName string) {
 	moduleName = strings.TrimSpace(moduleName)
 	orbitName = strings.TrimSpace(orbitName)
+	monitorName = strings.TrimSpace(monitorName)
 	if moduleName == "" || orbitName == "" {
 		return
 	}
 	s.orbitActivityMu.Lock()
+	defer s.orbitActivityMu.Unlock()
 	if s.orbitActivity == nil {
-		s.orbitActivity = make(map[string]string)
+		s.orbitActivity = make(map[string]orbitActivityRecord)
 	}
-	s.orbitActivity[orbitName] = moduleName
-	s.orbitActivityMu.Unlock()
+	record := s.orbitActivity[orbitName]
+	record.LastModule = moduleName
+	if monitorName != "" {
+		if record.Monitors == nil {
+			record.Monitors = make(map[string]string)
+		}
+		record.Monitors[monitorName] = moduleName
+	}
+	s.orbitActivity[orbitName] = record
 }
 
 func (s *DaemonState) recordWorkspaceActivation(workspace string) {
@@ -377,7 +391,31 @@ func (s *DaemonState) recordWorkspaceActivation(workspace string) {
 	if err != nil {
 		return
 	}
-	s.recordActiveModule(moduleName, orbitName)
+	monitorName := s.workspaceMonitor(workspace)
+	s.recordActiveModule(moduleName, orbitName, monitorName)
+}
+
+func (s *DaemonState) workspaceMonitor(workspace string) string {
+	workspace = strings.TrimSpace(workspace)
+	if workspace == "" {
+		return ""
+	}
+	h := s.HyprctlClient()
+	if h == nil {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), snapshotQueryTimeout)
+	defer cancel()
+	workspaces, err := h.Workspaces(ctx)
+	if err != nil {
+		return ""
+	}
+	for _, ws := range workspaces {
+		if strings.TrimSpace(ws.Name) == workspace {
+			return strings.TrimSpace(ws.Monitor)
+		}
+	}
+	return ""
 }
 
 // RegisterTempModule registers a temporary module for an orbit.
@@ -496,15 +534,23 @@ func (s *DaemonState) IsTemporaryWorkspace(workspace string) bool {
 	return ok
 }
 
-func (s *DaemonState) orbitActivitySnapshot() map[string]string {
+// TODO: Refactor?
+func (s *DaemonState) orbitActivitySnapshot() map[string]orbitActivityRecord {
 	s.orbitActivityMu.RLock()
 	defer s.orbitActivityMu.RUnlock()
 	if len(s.orbitActivity) == 0 {
-		return map[string]string{}
+		return map[string]orbitActivityRecord{}
 	}
-	snapshot := make(map[string]string, len(s.orbitActivity))
-	for name, moduleName := range s.orbitActivity {
-		snapshot[name] = moduleName
+	snapshot := make(map[string]orbitActivityRecord, len(s.orbitActivity))
+	for name, record := range s.orbitActivity {
+		clone := orbitActivityRecord{LastModule: record.LastModule}
+		if len(record.Monitors) != 0 {
+			clone.Monitors = make(map[string]string, len(record.Monitors))
+			for monitorName, moduleName := range record.Monitors {
+				clone.Monitors[monitorName] = moduleName
+			}
+		}
+		snapshot[name] = clone
 	}
 	return snapshot
 }
@@ -513,34 +559,55 @@ func (s *DaemonState) refreshOrbitActivity(orbits []config.OrbitRecord) {
 	s.orbitActivityMu.Lock()
 	defer s.orbitActivityMu.Unlock()
 	if len(orbits) == 0 {
-		s.orbitActivity = make(map[string]string)
+		s.orbitActivity = make(map[string]orbitActivityRecord)
 		return
 	}
 	current := s.orbitActivity
-	next := make(map[string]string, len(orbits))
+	next := make(map[string]orbitActivityRecord, len(orbits))
 	for _, orbitRecord := range orbits {
 		name := strings.TrimSpace(orbitRecord.Name)
 		if name == "" {
 			continue
 		}
 		if current != nil {
-			if moduleName := strings.TrimSpace(current[name]); moduleName != "" {
-				next[name] = moduleName
+			if record, ok := current[name]; ok {
+				clone := orbitActivityRecord{LastModule: record.LastModule}
+				if len(record.Monitors) != 0 {
+					clone.Monitors = make(map[string]string, len(record.Monitors))
+					for monitorName, moduleName := range record.Monitors {
+						clone.Monitors[monitorName] = moduleName
+					}
+				}
+				next[name] = clone
+				continue
 			}
 		}
+		next[name] = orbitActivityRecord{}
 	}
 	s.orbitActivity = next
 }
 
 // LastActiveModule returns the most recent module observed within the orbit.
-func (s *DaemonState) LastActiveModule(orbitName string) string {
+// When a monitor name is provided, it returns the last module seen on that monitor,
+// falling back to the orbit-wide record when no monitor-specific entry exists.
+func (s *DaemonState) LastActiveModule(orbitName, monitorName string) string {
 	orbitName = strings.TrimSpace(orbitName)
+	monitorName = strings.TrimSpace(monitorName)
 	if orbitName == "" {
 		return ""
 	}
 	s.orbitActivityMu.RLock()
 	defer s.orbitActivityMu.RUnlock()
-	return s.orbitActivity[orbitName]
+	record, ok := s.orbitActivity[orbitName]
+	if !ok {
+		return ""
+	}
+	if monitorName != "" && len(record.Monitors) != 0 {
+		if moduleName := strings.TrimSpace(record.Monitors[monitorName]); moduleName != "" {
+			return moduleName
+		}
+	}
+	return strings.TrimSpace(record.LastModule)
 }
 
 // PreferLastActiveFirst reports whether orbit switching should favour the last active module.
@@ -573,8 +640,10 @@ func (s *DaemonState) OrbitSummaries(ctx context.Context) ([]orbit.Summary, erro
 			status = "active"
 		}
 		summary := orbit.Summary{Name: name, Status: status}
-		if moduleName := activity[name]; moduleName != "" {
-			summary.ActiveModule = moduleName
+		if record, ok := activity[name]; ok {
+			if moduleName := strings.TrimSpace(record.LastModule); moduleName != "" {
+				summary.ActiveModule = moduleName
+			}
 		}
 		summaries = append(summaries, summary)
 	}
