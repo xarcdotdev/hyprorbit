@@ -891,6 +891,13 @@ func (d *Dispatcher) resetWorkspaces(ctx context.Context) error {
 		return nil
 	}
 	d.infof("[hyprorbit] workspace reset: workspaces scheduled for kill: %s", strings.Join(targets, ", "))
+
+	// Align workspace to move any windows from active workspace to primary workspace
+	d.debugf("resetWorkspaces: aligning workspace to migrate windows to safe workspace")
+	if err := d.alignWorkspace(ctx); err != nil {
+		return fmt.Errorf("workspace reset: failed to align workspace before cleanup: %w", err)
+	}
+
 	commands := make([][]string, 0, len(targets))
 	for _, name := range targets {
 		nameArg := "name:" + name
