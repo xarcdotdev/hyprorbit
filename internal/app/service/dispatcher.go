@@ -71,16 +71,16 @@ func errorResponse(msg string, exitCode int) ipc.Response {
 
 // requireOrbitService returns the orbit service or an error if unavailable.
 func (d *Dispatcher) requireOrbitService() (*orbit.Service, error) {
-	svc := d.state.OrbitService()
-	if svc == nil {
+	orbitSvc := d.state.OrbitService()
+	if orbitSvc == nil {
 		return nil, fmt.Errorf("orbit service unavailable")
 	}
-	return svc, nil
+	return orbitSvc, nil
 }
 
 // allModuleNamesForOrbit returns all module names (configured + temporary) for the given orbit.
-func (d *Dispatcher) allModuleNamesForOrbit(svc *module.Service, orbitName string) []string {
-	names := svc.ModuleNames()
+func (d *Dispatcher) allModuleNamesForOrbit(modSvc *module.Service, orbitName string) []string {
+	names := modSvc.ModuleNames()
 	tempNames := d.state.TempModuleNames(orbitName)
 	if len(tempNames) > 0 {
 		names = util.MergeStrings(names, tempNames)
@@ -90,11 +90,11 @@ func (d *Dispatcher) allModuleNamesForOrbit(svc *module.Service, orbitName strin
 
 // requireModuleService returns the module service or an error if unavailable.
 func (d *Dispatcher) requireModuleService() (*module.Service, error) {
-	svc := d.state.ModuleService()
-	if svc == nil {
+	modSvc := d.state.ModuleService()
+	if modSvc == nil {
 		return nil, fmt.Errorf("module service unavailable")
 	}
-	return svc, nil
+	return modSvc, nil
 }
 
 // requireHyprctlClient returns the hyprctl client or an error if unavailable.
@@ -171,18 +171,18 @@ func (d *Dispatcher) handleDaemon(ctx context.Context, req ipc.Request) (ipc.Res
 
 func (d *Dispatcher) handleOrbit(ctx context.Context, req ipc.Request) (ipc.Response, StreamHandler) {
 	resp := ipc.NewResponse(false)
-	svc, err := d.requireOrbitService()
+	orbitSvc, err := d.requireOrbitService()
 	if err != nil {
 		return errorResponse(err.Error(), 1), nil
 	}
 
 	switch req.Action {
 	case "get":
-		name, err := svc.Current(ctx)
+		name, err := orbitSvc.Current(ctx)
 		if err != nil {
 			return errorResponse(err.Error(), 1), nil
 		}
-		record, err := svc.Record(ctx, name)
+		record, err := orbitSvc.Record(ctx, name)
 		if err != nil {
 			return errorResponse(err.Error(), 1), nil
 		}
@@ -191,9 +191,9 @@ func (d *Dispatcher) handleOrbit(ctx context.Context, req ipc.Request) (ipc.Resp
 		}
 		return resp, nil
 	case "next":
-		return d.handleOrbitStep(ctx, svc, 1)
+		return d.handleOrbitStep(ctx, orbitSvc, 1)
 	case "prev":
-		return d.handleOrbitStep(ctx, svc, -1)
+		return d.handleOrbitStep(ctx, orbitSvc, -1)
 	case "list":
 		summaries, err := d.state.OrbitSummaries(ctx)
 		if err != nil {
@@ -208,14 +208,14 @@ func (d *Dispatcher) handleOrbit(ctx context.Context, req ipc.Request) (ipc.Resp
 			return errorResponse("orbit set requires exactly one argument", 2), nil
 		}
 		target := req.Args[0]
-		record, err := svc.Record(ctx, target)
+		record, err := orbitSvc.Record(ctx, target)
 		if err != nil {
 			return errorResponse(err.Error(), 2), nil
 		}
-		if err := svc.Set(ctx, target); err != nil {
+		if err := orbitSvc.Set(ctx, target); err != nil {
 			return errorResponse(err.Error(), 1), nil
 		}
-		primaryWorkspace, err := d.jumpToActiveModuleWorkspace(ctx)
+		primaryWorkspace, err := d.jumpToPrimaryModuleWorkspace(ctx)
 		if err != nil {
 			return errorResponse(err.Error(), 1), nil
 		}
@@ -233,16 +233,16 @@ func (d *Dispatcher) handleOrbit(ctx context.Context, req ipc.Request) (ipc.Resp
 	}
 }
 
-func (d *Dispatcher) handleOrbitStep(ctx context.Context, svc *orbit.Service, delta int) (ipc.Response, StreamHandler) {
+func (d *Dispatcher) handleOrbitStep(ctx context.Context, orbitSvc *orbit.Service, delta int) (ipc.Response, StreamHandler) {
 	resp := ipc.NewResponse(false)
-	seq, err := svc.Sequence(ctx)
+	seq, err := orbitSvc.Sequence(ctx)
 	if err != nil {
 		return errorResponse(err.Error(), 1), nil
 	}
 	if len(seq) == 0 {
 		return errorResponse("orbit: no orbits configured", 1), nil
 	}
-	current, err := svc.Current(ctx)
+	current, err := orbitSvc.Current(ctx)
 	if err != nil {
 		return errorResponse(err.Error(), 1), nil
 	}
@@ -260,10 +260,10 @@ func (d *Dispatcher) handleOrbitStep(ctx context.Context, svc *orbit.Service, de
 		}
 	}
 	name := seq[nextIdx]
-	if err := svc.Set(ctx, name); err != nil {
+	if err := orbitSvc.Set(ctx, name); err != nil {
 		return errorResponse(err.Error(), 1), nil
 	}
-	primaryWorkspace, err := d.jumpToActiveModuleWorkspace(ctx)
+	primaryWorkspace, err := d.jumpToPrimaryModuleWorkspace(ctx)
 	if err != nil {
 		return errorResponse(err.Error(), 1), nil
 	}
@@ -271,7 +271,7 @@ func (d *Dispatcher) handleOrbitStep(ctx context.Context, svc *orbit.Service, de
 		return errorResponse(err.Error(), 1), nil
 	}
 	d.state.InvalidateClients()
-	record, err := svc.Record(ctx, name)
+	record, err := orbitSvc.Record(ctx, name)
 	if err != nil {
 		return errorResponse(err.Error(), 1), nil
 	}
@@ -284,7 +284,7 @@ func (d *Dispatcher) handleOrbitStep(ctx context.Context, svc *orbit.Service, de
 
 func (d *Dispatcher) handleModule(ctx context.Context, req ipc.Request) (ipc.Response, StreamHandler, error) {
 	resp := ipc.NewResponse(false)
-	svc, err := d.requireModuleService()
+	modSvc, err := d.requireModuleService()
 	if err != nil {
 		return errorResponse(err.Error(), 1), nil, nil
 	}
@@ -295,7 +295,7 @@ func (d *Dispatcher) handleModule(ctx context.Context, req ipc.Request) (ipc.Res
 		if err != nil {
 			return errorResponse(err.Error(), 2), nil, nil
 		}
-		summaries, err := svc.WorkspaceSummaries(ctx)
+		summaries, err := modSvc.WorkspaceSummaries(ctx)
 		if err != nil {
 			return errorResponse(err.Error(), 1), nil, nil
 		}
@@ -321,11 +321,11 @@ func (d *Dispatcher) handleModule(ctx context.Context, req ipc.Request) (ipc.Res
 	case "get":
 		return d.handleModuleGet(ctx), nil, nil
 	case "jump-next":
-		return d.handleModuleStep(ctx, svc, 1)
+		return d.handleModuleStep(ctx, modSvc, 1)
 	case "jump-prev":
-		return d.handleModuleStep(ctx, svc, -1)
+		return d.handleModuleStep(ctx, modSvc, -1)
 	case "jump-create":
-		return d.handleModuleCreate(ctx, svc)
+		return d.handleModuleCreate(ctx, modSvc)
 	}
 
 	if len(req.Args) == 0 {
@@ -334,11 +334,11 @@ func (d *Dispatcher) handleModule(ctx context.Context, req ipc.Request) (ipc.Res
 	moduleName := req.Args[0]
 
 	if req.Action == "jump" {
-		return d.handleModuleJump(ctx, svc, moduleName)
+		return d.handleModuleJump(ctx, modSvc, moduleName)
 	}
 
-	if _, ok := svc.Module(moduleName); !ok {
-		available := strings.Join(svc.ModuleNames(), ", ")
+	if _, ok := modSvc.Module(moduleName); !ok {
+		available := strings.Join(modSvc.ModuleNames(), ", ")
 		return errorResponse(fmt.Sprintf("module %q not configured (available: %s)", moduleName, available), 2), nil, nil
 	}
 
@@ -348,13 +348,13 @@ func (d *Dispatcher) handleModule(ctx context.Context, req ipc.Request) (ipc.Res
 		if err != nil {
 			return errorResponse(err.Error(), 2), nil, nil
 		}
-		result, err := svc.Focus(ctx, moduleName, opts)
+		result, err := modSvc.Focus(ctx, moduleName, opts)
 		if err != nil {
 			return errorResponse(err.Error(), 1), nil, nil
 		}
 		return d.successResponseWithModuleResult(result)
 	case "seed":
-		results, err := svc.Seed(ctx, moduleName)
+		results, err := modSvc.Seed(ctx, moduleName)
 		if err != nil {
 			return errorResponse(err.Error(), 1), nil, nil
 		}
@@ -367,7 +367,7 @@ func (d *Dispatcher) handleModule(ctx context.Context, req ipc.Request) (ipc.Res
 	}
 }
 
-func (d *Dispatcher) handleModuleJump(ctx context.Context, svc *module.Service, moduleName string) (ipc.Response, StreamHandler, error) {
+func (d *Dispatcher) handleModuleJump(ctx context.Context, modSvc *module.Service, moduleName string) (ipc.Response, StreamHandler, error) {
 	hypr := d.state.HyprctlClient()
 	originWorkspace := ""
 	originWasTemp := false
@@ -379,8 +379,8 @@ func (d *Dispatcher) handleModuleJump(ctx context.Context, svc *module.Service, 
 	}
 	var result *module.Result
 	var err error
-	if _, ok := svc.Module(moduleName); ok {
-		result, err = svc.Jump(ctx, moduleName)
+	if _, ok := modSvc.Module(moduleName); ok {
+		result, err = modSvc.Jump(ctx, moduleName)
 		if err != nil {
 			return errorResponse(err.Error(), 1), nil, nil
 		}
@@ -388,7 +388,7 @@ func (d *Dispatcher) handleModuleJump(ctx context.Context, svc *module.Service, 
 		if hypr == nil {
 			return errorResponse("hyprctl client unavailable", 1), nil, nil
 		}
-		record, err := svc.ActiveOrbit(ctx)
+		record, err := modSvc.ActiveOrbit(ctx)
 		if err != nil {
 			return errorResponse(err.Error(), 1), nil, nil
 		}
@@ -410,7 +410,7 @@ func (d *Dispatcher) handleModuleJump(ctx context.Context, svc *module.Service, 
 	return d.successResponseWithModuleResult(result)
 }
 
-func (d *Dispatcher) handleModuleStep(ctx context.Context, svc *module.Service, delta int) (ipc.Response, StreamHandler, error) {
+func (d *Dispatcher) handleModuleStep(ctx context.Context, modSvc *module.Service, delta int) (ipc.Response, StreamHandler, error) {
 	resp := ipc.NewResponse(false)
 
 	if delta == 0 {
@@ -432,19 +432,19 @@ func (d *Dispatcher) handleModuleStep(ctx context.Context, svc *module.Service, 
 		return errorResponse(fmt.Sprintf("active workspace %q is not a module workspace", name), 1), nil, nil
 	}
 	originTemp := d.state.IsTemporaryWorkspace(name)
-	if _, ok := svc.Module(moduleName); !ok {
+	if _, ok := modSvc.Module(moduleName); !ok {
 		d.state.RegisterTempModule(orbitName, moduleName)
 	}
 
-	names := d.allModuleNamesForOrbit(svc, orbitName)
+	names := d.allModuleNamesForOrbit(modSvc, orbitName)
 	if len(names) == 0 {
 		return errorResponse("no modules configured", 1), nil, nil
 	}
 
 	target := util.CyclicIndex(names, moduleName, delta)
 	var result *module.Result
-	if _, ok := svc.Module(target); ok {
-		result, err = svc.Jump(ctx, target)
+	if _, ok := modSvc.Module(target); ok {
+		result, err = modSvc.Jump(ctx, target)
 		if err != nil {
 			return errorResponse(err.Error(), 1), nil, nil
 		}
@@ -473,13 +473,13 @@ func (d *Dispatcher) handleModuleStep(ctx context.Context, svc *module.Service, 
 	return resp, nil, nil
 }
 
-func (d *Dispatcher) handleModuleCreate(ctx context.Context, svc *module.Service) (ipc.Response, StreamHandler, error) {
+func (d *Dispatcher) handleModuleCreate(ctx context.Context, modSvc *module.Service) (ipc.Response, StreamHandler, error) {
 	hypr, err := d.requireHyprctlClient()
 	if err != nil {
 		return errorResponse(err.Error(), 1), nil, nil
 	}
 
-	result, err := d.createModuleWorkspace(ctx, svc, hypr, "")
+	result, err := d.createModuleWorkspace(ctx, modSvc, hypr, "")
 	if err != nil {
 		return errorResponse(err.Error(), 1), nil, nil
 	}
@@ -491,8 +491,8 @@ func (d *Dispatcher) handleModuleCreate(ctx context.Context, svc *module.Service
 // Helper functions
 // *********************************************
 
-func (d *Dispatcher) createModuleWorkspace(ctx context.Context, svc *module.Service, hypr runtime.HyprctlClient, origin string) (*module.Result, error) {
-	record, err := svc.ActiveOrbit(ctx)
+func (d *Dispatcher) createModuleWorkspace(ctx context.Context, modSvc *module.Service, hypr runtime.HyprctlClient, origin string) (*module.Result, error) {
+	record, err := modSvc.ActiveOrbit(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -655,11 +655,11 @@ func validateMoveTarget(targetRef string) error {
 }
 
 // moveClientsToTarget moves all clients to the target, focusing the last one if not silent.
-func (d *Dispatcher) moveClientsToTarget(ctx context.Context, svc *module.Service, hypr runtime.HyprctlClient, clients []hyprctl.ClientInfo, targetRef string, follow bool) ([]windowMoveResult, error) {
+func (d *Dispatcher) moveClientsToTarget(ctx context.Context, modSvc *module.Service, hypr runtime.HyprctlClient, clients []hyprctl.ClientInfo, targetRef string, follow bool) ([]windowMoveResult, error) {
 	results := make([]windowMoveResult, 0, len(clients))
 	for idx, client := range clients {
 		follow := !follow && idx == len(clients)-1
-		res, err := d.moveClientToModule(ctx, svc, hypr, client, targetRef, follow)
+		res, err := d.moveClientToModule(ctx, modSvc, hypr, client, targetRef, follow)
 		if err != nil {
 			return nil, err
 		}
@@ -678,7 +678,7 @@ func formatMoveResults(results []windowMoveResult) any {
 
 func (d *Dispatcher) handleModuleGet(ctx context.Context) ipc.Response {
 	resp := ipc.NewResponse(false)
-	svc, err := d.requireModuleService()
+	modSvc, err := d.requireModuleService()
 	if err != nil {
 		return errorResponse(err.Error(), 1)
 	}
@@ -704,7 +704,7 @@ func (d *Dispatcher) handleModuleGet(ctx context.Context) ipc.Response {
 		return errorResponse(err.Error(), 2)
 	}
 
-	status, err := svc.Status(ctx, moduleName, orbitName)
+	status, err := modSvc.Status(ctx, moduleName, orbitName)
 	if err != nil {
 		return errorResponse(err.Error(), 2)
 	}
@@ -788,18 +788,18 @@ func (d *Dispatcher) resetWorkspaces(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("workspace reset: %w", err)
 	}
-	svc, err := d.requireModuleService()
+	modSvc, err := d.requireModuleService()
 	if err != nil {
 		return fmt.Errorf("workspace reset: %w", err)
 	}
-	record, err := svc.ActiveOrbit(ctx)
+	record, err := modSvc.ActiveOrbit(ctx)
 	if err != nil {
 		return fmt.Errorf("workspace reset: failed to get active orbit: %w", err)
 	}
 	if record == nil || util.IsEmptyOrWhitespace(record.Name) {
 		return fmt.Errorf("workspace reset: active orbit not available")
 	}
-	primaryWorkspace, err := d.jumpToActiveModuleWorkspace(ctx)
+	primaryWorkspace, err := d.jumpToPrimaryModuleWorkspace(ctx)
 	if err != nil {
 		return fmt.Errorf("workspace reset: %w", err)
 	}
@@ -811,7 +811,7 @@ func (d *Dispatcher) resetWorkspaces(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("workspace reset: failed to list workspaces: %w", err)
 	}
-	moduleNames := svc.ModuleNames()
+	moduleNames := modSvc.ModuleNames()
 	safeSet := make(map[string]struct{}, len(moduleNames)+1)
 	if primary := strings.TrimSpace(primaryWorkspace); primary != "" {
 		safeSet[primary] = struct{}{}
@@ -935,14 +935,17 @@ func (d *Dispatcher) alignMonitorsToOrbit(ctx context.Context, orbitName, primar
 	return nil
 }
 
-func (d *Dispatcher) jumpToActiveModuleWorkspace(ctx context.Context) (string, error) {
-	modSvc := d.state.ModuleService()
-	if modSvc == nil {
-		return "", nil
+// jumpToPrimaryModuleWorkspace selects and jumps to the primary module workspace for the active orbit.
+// It chooses between the currently focused module or the last active module for this orbit,
+// based on user preference, then returns the workspace name.
+func (d *Dispatcher) jumpToPrimaryModuleWorkspace(ctx context.Context) (string, error) {
+	modSvc, err := d.requireModuleService()
+	if err != nil {
+		return "", err
 	}
-	hypr := d.state.HyprctlClient()
-	if hypr == nil {
-		return "", nil
+	hypr, err := d.requireHyprctlClient()
+	if err != nil {
+		return "", err
 	}
 	activeOrbit, err := modSvc.ActiveOrbit(ctx)
 	if err != nil {
@@ -1038,7 +1041,7 @@ func (d *Dispatcher) alignWorkspace(ctx context.Context) error {
 	return nil
 }
 
-func (d *Dispatcher) moveClientToModule(ctx context.Context, svc *module.Service, hypr runtime.HyprctlClient, client hyprctl.ClientInfo, targetRef string, follow bool) (windowMoveResult, error) {
+func (d *Dispatcher) moveClientToModule(ctx context.Context, modSvc *module.Service, hypr runtime.HyprctlClient, client hyprctl.ClientInfo, targetRef string, follow bool) (windowMoveResult, error) {
 	var result windowMoveResult
 	client = window.SanitizeClient(client)
 	if client.Address == "" {
@@ -1046,7 +1049,7 @@ func (d *Dispatcher) moveClientToModule(ctx context.Context, svc *module.Service
 	}
 	origin := client.Workspace.Name
 	originTemp := d.state.IsTemporaryWorkspace(origin)
-	target, err := d.resolveModuleTarget(ctx, svc, hypr, origin, targetRef)
+	target, err := d.resolveModuleTarget(ctx, modSvc, hypr, origin, targetRef)
 	if err != nil {
 		return result, err
 	}
@@ -1075,7 +1078,7 @@ func (d *Dispatcher) moveClientToModule(ctx context.Context, svc *module.Service
 	return result, nil
 }
 
-func (d *Dispatcher) resolveModuleTarget(ctx context.Context, svc *module.Service, hypr runtime.HyprctlClient, origin, ref string) (moduleTarget, error) {
+func (d *Dispatcher) resolveModuleTarget(ctx context.Context, modSvc *module.Service, hypr runtime.HyprctlClient, origin, ref string) (moduleTarget, error) {
 	var target moduleTarget
 	if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(ref)), "module:") {
 		return target, fmt.Errorf("window move: unsupported module target %q", ref)
@@ -1088,7 +1091,7 @@ func (d *Dispatcher) resolveModuleTarget(ctx context.Context, svc *module.Servic
 	origin = strings.TrimSpace(origin)
 
 	if strings.EqualFold(spec, "create") {
-		res, err := d.createModuleWorkspace(ctx, svc, hypr, origin)
+		res, err := d.createModuleWorkspace(ctx, modSvc, hypr, origin)
 		if err != nil {
 			return target, err
 		}
@@ -1103,7 +1106,7 @@ func (d *Dispatcher) resolveModuleTarget(ctx context.Context, svc *module.Servic
 		return target, nil
 	}
 
-	record, err := svc.ActiveOrbit(ctx)
+	record, err := modSvc.ActiveOrbit(ctx)
 	if err != nil {
 		return target, err
 	}
@@ -1112,7 +1115,7 @@ func (d *Dispatcher) resolveModuleTarget(ctx context.Context, svc *module.Servic
 	}
 	orbitName := strings.TrimSpace(record.Name)
 
-	names := d.allModuleNamesForOrbit(svc, orbitName)
+	names := d.allModuleNamesForOrbit(modSvc, orbitName)
 	if len(names) == 0 {
 		return target, fmt.Errorf("no modules configured")
 	}
@@ -1121,7 +1124,7 @@ func (d *Dispatcher) resolveModuleTarget(ctx context.Context, svc *module.Servic
 	if err != nil {
 		return target, err
 	}
-	if _, ok := svc.Module(moduleName); !ok {
+	if _, ok := modSvc.Module(moduleName); !ok {
 		d.state.RegisterTempModule(orbitName, moduleName)
 		target.Temporary = true
 	}
