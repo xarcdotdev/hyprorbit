@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"os"
 	"regexp"
 	"sort"
 	"strconv"
@@ -785,16 +786,13 @@ func filterWorkspaceSummaries(summaries []module.WorkspaceSummary, filter string
 func (d *Dispatcher) resetWorkspaces(ctx context.Context) error {
 	hypr, err := d.requireHyprctlClient()
 	if err != nil {
-		return err
+		return fmt.Errorf("workspace reset: %w", err)
 	}
 	workspaces, err := hypr.Workspaces(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("workspace reset: failed to list workspaces: %w", err)
 	}
-	if len(workspaces) == 0 {
-		return nil
-	}
-	commands := make([][]string, 0, len(workspaces))
+	targets := make([]string, 0, len(workspaces))
 	for _, ws := range workspaces {
 		name := strings.TrimSpace(ws.Name)
 		if name == "" {
@@ -803,10 +801,41 @@ func (d *Dispatcher) resetWorkspaces(ctx context.Context) error {
 		if strings.HasPrefix(name, "special") {
 			continue
 		}
-		commands = append(commands, []string{"dispatch", "killworkspace", "name:" + name})
+		targets = append(targets, name)
+	}
+	if len(targets) == 0 {
+		return nil
+	}
+	svc, err := d.requireModuleService()
+	if err != nil {
+		return fmt.Errorf("workspace reset: %w", err)
+	}
+	safeWorkspace := ""
+	if res, err := d.createModuleWorkspace(ctx, svc, hypr, ""); err != nil {
+		return fmt.Errorf("workspace reset: failed to prepare safe workspace: %w", err)
+	} else {
+		safeWorkspace = strings.TrimSpace(res.Workspace)
+	}
+	fmt.Fprintf(os.Stdout, "[hyprorbit] workspace reset: prepared safe workspace %q\n", safeWorkspace)
+	fmt.Fprintf(os.Stdout, "[hyprorbit] workspace reset: workspaces scheduled for kill: %s\n", strings.Join(targets, ", "))
+	commands := make([][]string, 0, len(targets))
+	for _, name := range targets {
+		if safeWorkspace != "" && name == safeWorkspace {
+			continue
+		}
+		nameArg := "name:" + name
+		if strings.ContainsAny(name, " \t\";") {
+			nameArg = fmt.Sprintf("name:%q", name)
+		}
+		cmd := []string{"dispatch", "killworkspace", nameArg}
+		commands = append(commands, cmd)
+		fmt.Fprintf(os.Stdout, "[hyprorbit] workspace reset: queued %v\n", cmd)
+	}
+	if len(commands) == 0 {
+		return nil
 	}
 	if _, err := hypr.Batch(ctx, commands...); err != nil {
-		return fmt.Errorf("workspace reset: %w", err)
+		return fmt.Errorf("workspace reset: failed to kill %d workspace(s): %w", len(commands), err)
 	}
 	d.state.InvalidateClients()
 	d.state.clearTempModules()
@@ -823,7 +852,7 @@ func (d *Dispatcher) alignMonitorsToOrbit(ctx context.Context, orbitName, primar
 	}
 	monitors, err := hypr.Monitors(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("align monitors: failed to list monitors: %w", err)
 	}
 	if len(monitors) == 0 {
 		return nil
@@ -865,18 +894,18 @@ func (d *Dispatcher) alignMonitorsToOrbit(ctx context.Context, orbitName, primar
 			continue
 		}
 		if err := hypr.Dispatch(ctx, "focusmonitor", mon.Name); err != nil {
-			return err
+			return fmt.Errorf("align monitors: failed to focus monitor %q: %w", mon.Name, err)
 		}
 		res, err := modSvc.Jump(ctx, moduleName)
 		if err != nil {
-			return err
+			return fmt.Errorf("align monitors: failed to jump to module %q on monitor %q: %w", moduleName, mon.Name, err)
 		}
 		d.recordModuleResult(res)
 	}
 
 	if focusedMonitor != "" {
 		if err := hypr.Dispatch(ctx, "focusmonitor", focusedMonitor); err != nil {
-			return err
+			return fmt.Errorf("align monitors: failed to restore focus to monitor %q: %w", focusedMonitor, err)
 		}
 	}
 
@@ -894,7 +923,7 @@ func (d *Dispatcher) jumpToActiveModuleWorkspace(ctx context.Context) (string, e
 	}
 	activeOrbit, err := modSvc.ActiveOrbit(ctx)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to get active orbit: %w", err)
 	}
 	var orbitName string
 	if activeOrbit != nil {
@@ -937,7 +966,7 @@ func (d *Dispatcher) jumpToActiveModuleWorkspace(ctx context.Context) (string, e
 		}
 		res, err := modSvc.Jump(ctx, candidate)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("failed to jump to module %q: %w", candidate, err)
 		}
 		d.recordModuleResult(res)
 		return strings.TrimSpace(res.Workspace), nil
@@ -949,19 +978,19 @@ func (d *Dispatcher) jumpToActiveModuleWorkspace(ctx context.Context) (string, e
 func (d *Dispatcher) alignWorkspace(ctx context.Context) error {
 	hypr, err := d.requireHyprctlClient()
 	if err != nil {
-		return err
+		return fmt.Errorf("workspace align: %w", err)
 	}
 	modSvc, err := d.requireModuleService()
 	if err != nil {
-		return err
+		return fmt.Errorf("workspace align: %w", err)
 	}
 	names := modSvc.ModuleNames()
 	if len(names) == 0 {
-		return fmt.Errorf("no modules configured")
+		return fmt.Errorf("workspace align: no modules configured")
 	}
 	record, err := modSvc.ActiveOrbit(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("workspace align: failed to get active orbit: %w", err)
 	}
 	targetWorkspace := module.WorkspaceName(names[0], record.Name)
 
@@ -969,18 +998,18 @@ func (d *Dispatcher) alignWorkspace(ctx context.Context) error {
 	ws, err := hypr.ActiveWorkspace(ctx)
 	if err == nil && ws != nil {
 		if err := workspace.EnsureExists(ctx, hypr, targetWorkspace, ws.Name); err != nil {
-			return err
+			return fmt.Errorf("workspace align: failed to ensure workspace %q exists: %w", targetWorkspace, err)
 		}
 
 		clients := d.collectClients(ctx)
 		moveErr := workspace.MoveClients(ctx, hypr, clients, targetWorkspace)
 		if moveErr != nil {
-			return moveErr
+			return fmt.Errorf("workspace align: failed to move windows to %q: %w", targetWorkspace, moveErr)
 		}
 	}
 	res, err := modSvc.Jump(ctx, names[0])
 	if err != nil {
-		return err
+		return fmt.Errorf("workspace align: failed to jump to module %q: %w", names[0], err)
 	}
 	d.recordModuleResult(res)
 	return nil
