@@ -36,7 +36,7 @@ func newInitCommand() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client, err := ctl.FromContext(cmd.Context())
 			if err != nil {
-				return err
+				return fmt.Errorf("failed to create daemon client: %w", err)
 			}
 
 			if err := ensureDaemonRunning(cmd.Context(), client); err != nil {
@@ -51,7 +51,7 @@ func newInitCommand() *cobra.Command {
 			fmt.Fprintf(out, "\n%s✦ hyprorbit initialization ✦%s\n\n", color(ansiPrimary), color(ansiReset))
 
 			if err := promptConfigGeneration(cmd.Context(), out); err != nil {
-				return err
+				return fmt.Errorf("config generation failed: %w", err)
 			}
 
 			fmt.Fprintf(out, "%sTip:%s Explore Waybar + keybinding examples at: \n", color(ansiAccent), color(ansiReset))
@@ -59,7 +59,7 @@ func newInitCommand() *cobra.Command {
 
 			ok, err := promptYesNo(out, "Reset Hyprland workspaces to match your first orbit/module [RECOMMENDED]?", false)
 			if err != nil {
-				return err
+				return fmt.Errorf("failed to read user input: %w", err)
 			}
 			if ok {
 				if err := resetWorkspaces(cmd.Context(), client, out); err != nil {
@@ -90,12 +90,12 @@ func promptConfigGeneration(ctx context.Context, out interface{ Write([]byte) (i
 	configDir := filepath.Join(homeDir, ".config", "hyprorbit")
 	configPath := filepath.Join(configDir, "config.yaml")
 	if err := ensureDefaultConfigFile(out, configPath); err != nil {
-		return err
+		return fmt.Errorf("failed to setup config file: %w", err)
 	}
 
 	waybarPath := filepath.Join(configDir, waybarConfigFileName)
 	if err := ensureWaybarConfigFile(out, waybarPath); err != nil {
-		return err
+		return fmt.Errorf("failed to setup Waybar config: %w", err)
 	}
 
 	return nil
@@ -111,7 +111,7 @@ func ensureDefaultConfigFile(out interface{ Write([]byte) (int, error) }, path s
 	}
 	create, err := promptYesNo(out, question, !exists)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to read user input: %w", err)
 	}
 	if !create {
 		fmt.Fprintf(out, "%sKeeping existing configuration.%s\n\n", color(ansiWarning), color(ansiReset))
@@ -137,7 +137,7 @@ func ensureWaybarConfigFile(out interface{ Write([]byte) (int, error) }, path st
 	}
 	create, err := promptYesNo(out, question, !exists)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to read user input: %w", err)
 	}
 	if !create {
 		fmt.Fprintf(out, "%sKeeping existing Waybar configuration.%s\n\n", color(ansiWarning), color(ansiReset))
@@ -159,12 +159,12 @@ func resetWorkspaces(ctx context.Context, client *ctl.Client, out interface{ Wri
 	defer spinner.Stop()
 
 	if err := client.WorkspaceReset(ctx); err != nil {
-		return err
+		return fmt.Errorf("failed to reset workspaces: %w", err)
 	}
 
 	spinner.Update("Aligning orbit")
 	if err := client.WorkspaceAlign(ctx); err != nil {
-		return err
+		return fmt.Errorf("failed to align workspace focus: %w", err)
 	}
 
 	spinner.StopWithMessage(fmt.Sprintf("%s✓%s Workspaces reset to orbit baseline", color(ansiSuccess), color(ansiReset)))
@@ -179,7 +179,7 @@ func ensureDaemonRunning(ctx context.Context, client *ctl.Client) error {
 		if isConnectionError(err) {
 			return fmt.Errorf("hyprorbit daemon is not running. Start it (e.g. `hyprorbitd`) and rerun this command")
 		}
-		return err
+		return fmt.Errorf("daemon health check failed: %w", err)
 	}
 	return nil
 }
@@ -209,13 +209,13 @@ func promptYesNo(out interface{ Write([]byte) (int, error) }, question string, d
 	}
 	prompt := fmt.Sprintf("%s? [%s%s%s/%s%s%s]: ", question, color(ansiPrompt), yesOption, color(ansiReset), color(ansiPrompt), noOption, color(ansiReset))
 	if _, err := fmt.Fprint(out, prompt); err != nil {
-		return false, err
+		return false, fmt.Errorf("failed to write prompt: %w", err)
 	}
 
 	reader := bufio.NewReader(os.Stdin)
 	line, err := reader.ReadString('\n')
 	if err != nil && !errors.Is(err, context.Canceled) {
-		return false, err
+		return false, fmt.Errorf("failed to read from stdin: %w", err)
 	}
 	line = strings.TrimSpace(strings.ToLower(line))
 	if line == "" {
