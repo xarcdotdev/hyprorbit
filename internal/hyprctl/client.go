@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"strings"
@@ -22,7 +23,8 @@ type Options struct {
 
 // Client wraps hyprctl command execution with caching helpers.
 type Client struct {
-	opts Options
+	opts   Options
+	logger *log.Logger
 
 	cacheMu  sync.Mutex
 	clients  []byte
@@ -46,10 +48,29 @@ func NewClient(opts Options) *Client {
 	return &Client{opts: opts}
 }
 
+// SetLogger sets the debug logger for this client.
+func (c *Client) SetLogger(logger *log.Logger) {
+	c.logger = logger
+}
+
+// debugf logs a debug message if debug logging is enabled.
+func (c *Client) debugf(format string, args ...any) {
+	if c != nil && c.logger != nil {
+		c.logger.Printf(format, args...)
+	}
+}
+
 // Dispatch issues `hyprctl dispatch` with the provided arguments.
 func (c *Client) Dispatch(ctx context.Context, args ...string) error {
+	c.debugf("Dispatch: args=%v", args)
 	payload := append([]string{"dispatch"}, args...)
-	return c.run(ctx, payload...)
+	err := c.run(ctx, payload...)
+	if err != nil {
+		c.debugf("Dispatch: failed with args=%v: %v", args, err)
+		return err
+	}
+	c.debugf("Dispatch: success with args=%v", args)
+	return nil
 }
 
 // Clients returns the cached JSON output from `hyprctl clients -j`.
@@ -106,17 +127,22 @@ func (c *Client) Workspaces(ctx context.Context) ([]Workspace, error) {
 
 // ActiveWorkspace returns the currently active workspace via `hyprctl activeworkspace -j`.
 func (c *Client) ActiveWorkspace(ctx context.Context) (*Workspace, error) {
+	c.debugf("ActiveWorkspace: querying active workspace")
 	data, err := c.runCombined(ctx, "activeworkspace", "-j")
 	if err != nil {
+		c.debugf("ActiveWorkspace: query failed: %v", err)
 		return nil, err
 	}
 	if len(bytes.TrimSpace(data)) == 0 {
+		c.debugf("ActiveWorkspace: no active workspace")
 		return nil, nil
 	}
 	var ws Workspace
 	if err := decodePayload(data, &ws, "active workspace"); err != nil {
+		c.debugf("ActiveWorkspace: decode failed: %v", err)
 		return nil, err
 	}
+	c.debugf("ActiveWorkspace: active workspace=%q (id=%d)", ws.Name, ws.ID)
 	return &ws, nil
 }
 
@@ -191,7 +217,14 @@ func (c *Client) MoveToWorkspaceSilent(ctx context.Context, windowAddr, workspac
 
 // SwitchWorkspace switches focus to the named workspace.
 func (c *Client) SwitchWorkspace(ctx context.Context, workspace string) error {
-	return c.Dispatch(ctx, "workspace", "name:"+workspace)
+	c.debugf("SwitchWorkspace: switching to workspace=%q", workspace)
+	err := c.Dispatch(ctx, "workspace", "name:"+workspace)
+	if err != nil {
+		c.debugf("SwitchWorkspace: failed to switch to workspace=%q: %v", workspace, err)
+		return err
+	}
+	c.debugf("SwitchWorkspace: successfully switched to workspace=%q", workspace)
+	return nil
 }
 
 // Batch executes multiple hyprctl commands using `hyprctl --batch`.
@@ -216,8 +249,10 @@ func (c *Client) Batch(ctx context.Context, commands ...[]string) ([]BatchResult
 	}
 
 	joined := strings.Join(parts, ";")
+	c.debugf("Batch: executing %d command(s): %v", len(labels), labels)
 	output, err := c.runCombined(ctx, "--batch", joined)
 	if err != nil {
+		c.debugf("Batch: failed to execute commands: %v", err)
 		return nil, err
 	}
 
@@ -230,6 +265,7 @@ func (c *Client) Batch(ctx context.Context, commands ...[]string) ([]BatchResult
 		}
 		results = append(results, BatchResult{Command: label, Output: out})
 	}
+	c.debugf("Batch: successfully executed %d command(s)", len(results))
 	return results, nil
 }
 

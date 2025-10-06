@@ -959,6 +959,7 @@ func (d *Dispatcher) alignMonitorsToOrbit(ctx context.Context, orbitName, primar
 			}
 		}
 	}
+	// Remember Focused monitor for focusing it again at the end
 	var focusedMonitor string
 	for _, mon := range monitors {
 		if mon.Focused {

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"hyprorbit/internal/config"
+	"hyprorbit/internal/debug"
 	"hyprorbit/internal/hyprctl"
 	"hyprorbit/internal/hyprctl/events"
 	"hyprorbit/internal/module"
@@ -67,6 +68,15 @@ func NewDaemonState(ctx context.Context, opts Options) (*DaemonState, error) {
 		CacheTTL:     opts.EffectiveCacheTTL(),
 		DisableCache: opts.DisableCache,
 	})
+
+	// Setup debug logging for hyprctl
+	hyprctlLogger, err := debug.NewLogger("hyprctl", &cfg.Debug)
+	if err != nil {
+		return nil, fmt.Errorf("failed to setup hyprctl debug logging: %w", err)
+	}
+	if hyprctlLogger != nil {
+		hyprClient.SetLogger(hyprctlLogger)
+	}
 
 	orbitSvc, err := orbit.NewServiceWithDependencies(orbit.Dependencies{
 		Tracker: orbitMgr,

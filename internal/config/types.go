@@ -82,6 +82,7 @@ type DebugConfig struct {
 	Enabled    bool   `yaml:"enabled"`
 	LogFile    string `yaml:"log_file"`
 	Dispatcher bool   `yaml:"dispatcher"`
+	Hyprctl    bool   `yaml:"hyprctl"`
 }
 
 // LogFilePath returns the configured log file path or a default location.
