@@ -19,7 +19,7 @@ func TestDispatcherModuleStatusStream(t *testing.T) {
 		logger:      func(string, ...any) {},
 	}
 
-	dispatcher := NewDispatcher(state)
+	dispatcher := NewDispatcher(state, nil)
 
 	req := ipc.Request{Version: ipc.Version, Command: "module", Action: "status-stream"}
 

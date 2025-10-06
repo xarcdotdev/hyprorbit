@@ -19,6 +19,7 @@ type EffectiveConfig struct {
 	Source   string
 	Warnings []string
 	Waybar   WaybarSettings
+	Debug    DebugConfig
 }
 
 // OrbitRecord represents a normalized orbit entry.
@@ -259,6 +260,7 @@ func BuildEffective(source string, cfg *Config) (*EffectiveConfig, error) {
 		Source:   source,
 		Warnings: warnings,
 		Waybar:   waybar,
+		Debug:    cfg.Debug,
 	}, nil
 }
 

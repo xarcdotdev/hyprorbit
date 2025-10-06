@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"regexp"
@@ -23,7 +24,8 @@ import (
 
 // Dispatcher routes IPC requests to domain handlers.
 type Dispatcher struct {
-	state *DaemonState
+	state  *DaemonState
+	logger *log.Logger
 }
 
 type windowMoveResult struct {
@@ -57,8 +59,27 @@ type moduleTarget struct {
 type StreamHandler func(ctx context.Context, conn net.Conn) error
 
 // NewDispatcher constructs a dispatcher bound to the daemon state.
-func NewDispatcher(state *DaemonState) *Dispatcher {
-	return &Dispatcher{state: state}
+func NewDispatcher(state *DaemonState, logger *log.Logger) *Dispatcher {
+	return &Dispatcher{
+		state:  state,
+		logger: logger,
+	}
+}
+
+// debugf logs a debug message if debug logging is enabled.
+func (d *Dispatcher) debugf(format string, args ...any) {
+	if d != nil && d.logger != nil {
+		d.logger.Printf(format, args...)
+	}
+}
+
+// infof logs to stdout and optionally to debug log if enabled.
+func (d *Dispatcher) infof(format string, args ...any) {
+	msg := fmt.Sprintf(format, args...)
+	fmt.Fprintf(os.Stdout, "%s\n", msg)
+	if d != nil && d.logger != nil {
+		d.logger.Print(msg)
+	}
 }
 
 // errorResponse creates a failed response with the given error message and exit code.
@@ -131,6 +152,8 @@ func (d *Dispatcher) successResponseWithModuleResult(result *module.Result) (ipc
 
 // Handle executes the request, returning a response suitable for IPC clients and an optional stream handler.
 func (d *Dispatcher) Handle(ctx context.Context, req ipc.Request) (ipc.Response, StreamHandler, error) {
+	d.debugf("Handle: command=%q action=%q args=%v", req.Command, req.Action, req.Args)
+
 	if req.Version != ipc.Version {
 		return errorResponse(fmt.Sprintf("unsupported protocol version %d", req.Version), 1), nil, nil
 	}
@@ -170,6 +193,7 @@ func (d *Dispatcher) handleDaemon(ctx context.Context, req ipc.Request) (ipc.Res
 }
 
 func (d *Dispatcher) handleOrbit(ctx context.Context, req ipc.Request) (ipc.Response, StreamHandler) {
+	d.debugf("handleOrbit: action=%q args=%v", req.Action, req.Args)
 	resp := ipc.NewResponse(false)
 	orbitSvc, err := d.requireOrbitService()
 	if err != nil {
@@ -208,6 +232,7 @@ func (d *Dispatcher) handleOrbit(ctx context.Context, req ipc.Request) (ipc.Resp
 			return errorResponse("orbit set requires exactly one argument", 2), nil
 		}
 		target := req.Args[0]
+		d.debugf("handleOrbit set: target=%q", target)
 		record, err := orbitSvc.Record(ctx, target)
 		if err != nil {
 			return errorResponse(err.Error(), 2), nil
@@ -219,6 +244,7 @@ func (d *Dispatcher) handleOrbit(ctx context.Context, req ipc.Request) (ipc.Resp
 		if err != nil {
 			return errorResponse(err.Error(), 1), nil
 		}
+		d.debugf("handleOrbit set: primaryWorkspace=%q", primaryWorkspace)
 		if err := d.alignMonitorsToOrbit(ctx, target, primaryWorkspace); err != nil {
 			return errorResponse(err.Error(), 1), nil
 		}
@@ -234,6 +260,7 @@ func (d *Dispatcher) handleOrbit(ctx context.Context, req ipc.Request) (ipc.Resp
 }
 
 func (d *Dispatcher) handleOrbitStep(ctx context.Context, orbitSvc *orbit.Service, delta int) (ipc.Response, StreamHandler) {
+	d.debugf("handleOrbitStep: delta=%d", delta)
 	resp := ipc.NewResponse(false)
 	seq, err := orbitSvc.Sequence(ctx)
 	if err != nil {
@@ -246,6 +273,7 @@ func (d *Dispatcher) handleOrbitStep(ctx context.Context, orbitSvc *orbit.Servic
 	if err != nil {
 		return errorResponse(err.Error(), 1), nil
 	}
+	d.debugf("handleOrbitStep: current=%q sequence=%v", current, seq)
 	idx := util.IndexOf(seq, current)
 	if idx == -1 {
 		return errorResponse(fmt.Sprintf("orbit: current orbit %q not found", current), 1), nil
@@ -260,6 +288,7 @@ func (d *Dispatcher) handleOrbitStep(ctx context.Context, orbitSvc *orbit.Servic
 		}
 	}
 	name := seq[nextIdx]
+	d.debugf("handleOrbitStep: switching from %q (index %d) to %q (index %d)", current, idx, name, nextIdx)
 	if err := orbitSvc.Set(ctx, name); err != nil {
 		return errorResponse(err.Error(), 1), nil
 	}
@@ -267,6 +296,7 @@ func (d *Dispatcher) handleOrbitStep(ctx context.Context, orbitSvc *orbit.Servic
 	if err != nil {
 		return errorResponse(err.Error(), 1), nil
 	}
+	d.debugf("handleOrbitStep: primaryWorkspace=%q", primaryWorkspace)
 	if err := d.alignMonitorsToOrbit(ctx, name, primaryWorkspace); err != nil {
 		return errorResponse(err.Error(), 1), nil
 	}
@@ -283,6 +313,7 @@ func (d *Dispatcher) handleOrbitStep(ctx context.Context, orbitSvc *orbit.Servic
 }
 
 func (d *Dispatcher) handleModule(ctx context.Context, req ipc.Request) (ipc.Response, StreamHandler, error) {
+	d.debugf("handleModule: action=%q args=%v", req.Action, req.Args)
 	resp := ipc.NewResponse(false)
 	modSvc, err := d.requireModuleService()
 	if err != nil {
@@ -510,6 +541,7 @@ func (d *Dispatcher) createModuleWorkspace(ctx context.Context, modSvc *module.S
 }
 
 func (d *Dispatcher) handleWindow(ctx context.Context, req ipc.Request) (ipc.Response, StreamHandler, error) {
+	d.debugf("handleWindow: action=%q args=%v", req.Action, req.Args)
 	switch req.Action {
 	case "move":
 		return d.handleWindowMove(ctx, req)
@@ -784,6 +816,7 @@ func filterWorkspaceSummaries(summaries []module.WorkspaceSummary, filter string
 }
 
 func (d *Dispatcher) resetWorkspaces(ctx context.Context) error {
+	d.debugf("resetWorkspaces: starting workspace reset")
 	hypr, err := d.requireHyprctlClient()
 	if err != nil {
 		return fmt.Errorf("workspace reset: %w", err)
@@ -799,11 +832,15 @@ func (d *Dispatcher) resetWorkspaces(ctx context.Context) error {
 	if record == nil || util.IsEmptyOrWhitespace(record.Name) {
 		return fmt.Errorf("workspace reset: active orbit not available")
 	}
+	orbitName := strings.TrimSpace(record.Name)
+	d.debugf("resetWorkspaces: active orbit=%q", orbitName)
+
 	primaryWorkspace, err := d.jumpToFirstModuleWorkspace(ctx, modSvc)
 	if err != nil {
 		return fmt.Errorf("workspace reset: %w", err)
 	}
-	orbitName := strings.TrimSpace(record.Name)
+	d.debugf("resetWorkspaces: primaryWorkspace=%q", primaryWorkspace)
+
 	if err := d.alignMonitorsToOrbit(ctx, orbitName, primaryWorkspace); err != nil {
 		return fmt.Errorf("workspace reset: %w", err)
 	}
@@ -811,7 +848,16 @@ func (d *Dispatcher) resetWorkspaces(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("workspace reset: failed to list workspaces: %w", err)
 	}
+
+	// Log all current workspaces
+	allWorkspaceNames := make([]string, 0, len(workspaces))
+	for _, ws := range workspaces {
+		allWorkspaceNames = append(allWorkspaceNames, ws.Name)
+	}
+	d.debugf("resetWorkspaces: current workspaces: %v", allWorkspaceNames)
+
 	moduleNames := modSvc.ModuleNames()
+	d.debugf("resetWorkspaces: configured modules: %v", moduleNames)
 	safeSet := make(map[string]struct{}, len(moduleNames)+1)
 	if primary := strings.TrimSpace(primaryWorkspace); primary != "" {
 		safeSet[primary] = struct{}{}
@@ -825,7 +871,7 @@ func (d *Dispatcher) resetWorkspaces(ctx context.Context) error {
 		safeList = append(safeList, ws)
 	}
 	sort.Strings(safeList)
-	fmt.Fprintf(os.Stdout, "[hyprorbit] workspace reset: safe workspaces: %s\n", strings.Join(safeList, ", "))
+	d.infof("[hyprorbit] workspace reset: safe workspaces: %s", strings.Join(safeList, ", "))
 	targets := make([]string, 0, len(workspaces))
 	for _, ws := range workspaces {
 		name := strings.TrimSpace(ws.Name)
@@ -841,10 +887,10 @@ func (d *Dispatcher) resetWorkspaces(ctx context.Context) error {
 		targets = append(targets, name)
 	}
 	if len(targets) == 0 {
-		fmt.Fprintf(os.Stdout, "[hyprorbit] workspace reset: no workspaces to kill\n")
+		d.infof("[hyprorbit] workspace reset: no workspaces to kill")
 		return nil
 	}
-	fmt.Fprintf(os.Stdout, "[hyprorbit] workspace reset: workspaces scheduled for kill: %s\n", strings.Join(targets, ", "))
+	d.infof("[hyprorbit] workspace reset: workspaces scheduled for kill: %s", strings.Join(targets, ", "))
 	commands := make([][]string, 0, len(targets))
 	for _, name := range targets {
 		nameArg := "name:" + name
@@ -853,7 +899,7 @@ func (d *Dispatcher) resetWorkspaces(ctx context.Context) error {
 		}
 		cmd := []string{"dispatch", "killworkspace", nameArg}
 		commands = append(commands, cmd)
-		fmt.Fprintf(os.Stdout, "[hyprorbit] workspace reset: queued %v\n", cmd)
+		d.debugf("workspace reset: queued %v", cmd)
 	}
 	if len(commands) == 0 {
 		return nil
@@ -861,8 +907,10 @@ func (d *Dispatcher) resetWorkspaces(ctx context.Context) error {
 	if _, err := hypr.Batch(ctx, commands...); err != nil {
 		return fmt.Errorf("workspace reset: failed to kill %d workspace(s): %w", len(commands), err)
 	}
+	d.debugf("resetWorkspaces: successfully killed %d workspace(s)", len(commands))
 	d.state.InvalidateClients()
 	d.state.clearTempModules()
+	d.debugf("resetWorkspaces: workspace reset complete")
 	return nil
 }
 
@@ -939,6 +987,7 @@ func (d *Dispatcher) alignMonitorsToOrbit(ctx context.Context, orbitName, primar
 // It chooses between the currently focused module or the last active module for this orbit,
 // based on user preference, then returns the workspace name.
 func (d *Dispatcher) jumpToPrimaryModuleWorkspace(ctx context.Context) (string, error) {
+	d.debugf("jumpToPrimaryModuleWorkspace: selecting primary workspace")
 	modSvc, err := d.requireModuleService()
 	if err != nil {
 		return "", err
@@ -1005,6 +1054,7 @@ func (d *Dispatcher) jumpToPrimaryModuleWorkspace(ctx context.Context) (string, 
 // This provides deterministic workspace selection, ignoring user preferences and history.
 func (d *Dispatcher) jumpToFirstModuleWorkspace(ctx context.Context, modSvc *module.Service) (string, error) {
 	moduleNames := modSvc.ModuleNames()
+	d.debugf("jumpToFirstModuleWorkspace: modules=%v", moduleNames)
 	if len(moduleNames) == 0 {
 		return "", fmt.Errorf("no modules configured")
 	}
@@ -1014,6 +1064,7 @@ func (d *Dispatcher) jumpToFirstModuleWorkspace(ctx context.Context, modSvc *mod
 		return "", fmt.Errorf("failed to jump to first module %q: %w", moduleNames[0], err)
 	}
 	d.recordModuleResult(result)
+	d.debugf("jumpToFirstModuleWorkspace: jumped to workspace=%q", result.Workspace)
 	return strings.TrimSpace(result.Workspace), nil
 }
 

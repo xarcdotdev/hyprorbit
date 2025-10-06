@@ -49,6 +49,7 @@ type HyprctlClient interface {
 	Clients(ctx context.Context) ([]byte, error)
 	DecodeClients(ctx context.Context, out any) error
 	InvalidateClients()
+	// Workspaces returns the list of workspaces via `hyprctl workspaces -j`.
 	Workspaces(ctx context.Context) ([]hyprctl.Workspace, error)
 	ActiveWorkspace(ctx context.Context) (*hyprctl.Workspace, error)
 	ActiveWindow(ctx context.Context) (*hyprctl.Window, error)

@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"hyprorbit/internal/config"
+	"hyprorbit/internal/debug"
 	"hyprorbit/internal/ipc"
 )
 
@@ -37,10 +39,21 @@ func NewServer(ctx context.Context, opts Options) (*Server, error) {
 		return nil, err
 	}
 
+	// Setup debug logging for dispatcher
+	cfg := daemonState.Config()
+	var debugCfg *config.DebugConfig
+	if cfg != nil {
+		debugCfg = &cfg.Debug
+	}
+	logger, err := debug.NewLogger("dispatcher", debugCfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to setup debug logging: %w", err)
+	}
+
 	return &Server{
 		opts:       opts,
 		state:      daemonState,
-		dispatcher: NewDispatcher(daemonState),
+		dispatcher: NewDispatcher(daemonState, logger),
 	}, nil
 }
 

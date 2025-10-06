@@ -20,6 +20,7 @@ type Config struct {
 	Defaults ModuleDefaults    `yaml:"defaults"`
 	Orbit    OrbitConfig       `yaml:"orbit"`
 	Waybar   WaybarConfig      `yaml:"waybar"`
+	Debug    DebugConfig       `yaml:"debug"`
 	Extras   map[string]any    `yaml:",inline"`
 }
 
@@ -74,6 +75,21 @@ type ModuleDefaults struct {
 type OrbitConfig struct {
 	SwitchPreference string         `yaml:"switch_preference"`
 	Extras           map[string]any `yaml:",inline"`
+}
+
+// DebugConfig captures debug logging settings.
+type DebugConfig struct {
+	Enabled    bool   `yaml:"enabled"`
+	LogFile    string `yaml:"log_file"`
+	Dispatcher bool   `yaml:"dispatcher"`
+}
+
+// LogFilePath returns the configured log file path or a default location.
+func (d *DebugConfig) LogFilePath() string {
+	if d.LogFile != "" {
+		return d.LogFile
+	}
+	return "/tmp/hyprorbit-debug.log"
 }
 
 // OrbitSwitchPreference determines how orbit switches resolve module focus.

@@ -358,6 +358,12 @@ defaults:
 
 orbit:
   switch_preference: last-active-first
+
+# Debug logging configuration
+debug:
+  enabled: false                       # Enable debug logging
+  log_file: "/tmp/hyprorbit-debug.log" # Optional: defaults to /tmp/hyprorbit-debug.log
+  dispatcher: false                    # Enable dispatcher-specific debug logs
 `
 
 const defaultWaybarConfigYAML = `module_watch:
