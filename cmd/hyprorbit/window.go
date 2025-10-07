@@ -20,6 +20,7 @@ func newWindowCommand() *cobra.Command {
 
 func newWindowMoveCommand() *cobra.Command {
 	var silent bool
+	var global bool
 
 	cmd := &cobra.Command{
 		Use:   "move <window> <target>",
@@ -31,7 +32,7 @@ func newWindowMoveCommand() *cobra.Command {
 				return err
 			}
 
-			results, err := client.WindowMove(cmd.Context(), args[0], args[1], silent)
+			results, err := client.WindowMove(cmd.Context(), args[0], args[1], silent, global)
 			if err != nil {
 				return err
 			}
@@ -40,6 +41,7 @@ func newWindowMoveCommand() *cobra.Command {
 	}
 
 	cmd.Flags().BoolVar(&silent, "silent", false, "Do not focus the target workspace after moving the window")
+	cmd.Flags().BoolVar(&global, "global", false, "Select windows from all orbits instead of current orbit only")
 
 	return cmd
 }

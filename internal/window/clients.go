@@ -27,6 +27,7 @@ func SanitizeClient(client hyprctl.ClientInfo) hyprctl.ClientInfo {
 }
 
 // FilterByScope limits clients to the requested search domain.
+// For ScopeGlobal, special workspaces are excluded by default.
 func FilterByScope(clients []hyprctl.ClientInfo, scope Scope, workspace string, orbit string) []hyprctl.ClientInfo {
 	workspace = strings.TrimSpace(workspace)
 	orbit = strings.TrimSpace(orbit)
@@ -38,21 +39,24 @@ func FilterByScope(clients []hyprctl.ClientInfo, scope Scope, workspace string, 
 	result := make([]hyprctl.ClientInfo, 0, len(clients))
 	for _, client := range clients {
 		sanitized := SanitizeClient(client)
+		wsName := sanitized.Workspace.Name
 		switch scope {
 		case ScopeWorkspace:
-			if workspace == "" || sanitized.Workspace.Name != workspace {
+			if workspace == "" || wsName != workspace {
 				continue
 			}
 		case ScopeOrbit:
-			name := sanitized.Workspace.Name
 			if orbit == "" {
 				continue
 			}
-			if name == "" || !strings.HasSuffix(name, suffix) {
+			if wsName == "" || !strings.HasSuffix(wsName, suffix) {
 				continue
 			}
 		case ScopeGlobal:
-			// no workspace filtering
+			// Filter out special workspaces for global scope
+			if wsName == "" || strings.HasPrefix(wsName, "special") {
+				continue
+			}
 		}
 		result = append(result, sanitized)
 	}
@@ -172,8 +176,9 @@ func DecodeClients(ctx context.Context, hypr runtime.HyprctlClient) ([]hyprctl.C
 }
 
 // ResolveSelection resolves window references and returns matching clients.
-// Supports: "current", "workspace", and scoped regex references like "orbit:class:firefox".
-func ResolveSelection(ctx context.Context, hypr runtime.HyprctlClient, orbitProvider orbit.Provider, ref string) ([]hyprctl.ClientInfo, error) {
+// Supports: "current", "workspace", "all", and scoped regex references like "orbit:class:firefox".
+// When global is true, regex matches are performed across all orbits instead of the current scope.
+func ResolveSelection(ctx context.Context, hypr runtime.HyprctlClient, orbitProvider orbit.Provider, ref string, global bool) ([]hyprctl.ClientInfo, error) {
 	ref = strings.TrimSpace(ref)
 	if ref == "" {
 		return nil, fmt.Errorf("window reference cannot be empty")
@@ -203,6 +208,12 @@ func ResolveSelection(ctx context.Context, hypr runtime.HyprctlClient, orbitProv
 			return nil, err
 		}
 		return FilterByScope(clients, ScopeWorkspace, workspaceName, ""), nil
+	case lower == "all":
+		clients, err := DecodeClients(ctx, hypr)
+		if err != nil {
+			return nil, err
+		}
+		return FilterByScope(clients, ScopeGlobal, "", ""), nil
 	default:
 		reference, isRegex, err := ParseReference(ref)
 		if err != nil {
@@ -234,23 +245,30 @@ func ResolveSelection(ctx context.Context, hypr runtime.HyprctlClient, orbitProv
 			return nil, err
 		}
 
-		var workspaceName string
-		if reference.Scope == ScopeWorkspace || reference.Scope == ScopeOrbit {
-			workspaceName, err = workspace.ActiveName(ctx, hypr)
-			if err != nil {
-				return nil, err
+		// When global is true, use ScopeGlobal to match across all workspaces
+		var scoped []hyprctl.ClientInfo
+		if global {
+			scoped = FilterByScope(clients, ScopeGlobal, "", "")
+		} else {
+			var workspaceName string
+			if reference.Scope == ScopeWorkspace || reference.Scope == ScopeOrbit {
+				workspaceName, err = workspace.ActiveName(ctx, hypr)
+				if err != nil {
+					return nil, err
+				}
 			}
+
+			var orbitName string
+			if reference.Scope == ScopeOrbit {
+				orbitName, err = orbit.ActiveName(ctx, orbitProvider)
+				if err != nil {
+					return nil, err
+				}
+			}
+
+			scoped = FilterByScope(clients, reference.Scope, workspaceName, orbitName)
 		}
 
-		var orbitName string
-		if reference.Scope == ScopeOrbit {
-			orbitName, err = orbit.ActiveName(ctx, orbitProvider)
-			if err != nil {
-				return nil, err
-			}
-		}
-
-		scoped := FilterByScope(clients, reference.Scope, workspaceName, orbitName)
 		if len(scoped) == 0 {
 			return scoped, nil
 		}

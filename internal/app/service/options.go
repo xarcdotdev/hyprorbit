@@ -146,3 +146,19 @@ func parseSilentFlag(flags map[string]any) (bool, error) {
 	}
 	return val, nil
 }
+
+// parseGlobalFlag extracts the global flag from request flags.
+func parseGlobalFlag(flags map[string]any) (bool, error) {
+	if flags == nil {
+		return false, nil
+	}
+	raw, ok := flags["global"]
+	if !ok {
+		return false, nil
+	}
+	val, err := util.ToBool(raw)
+	if err != nil {
+		return false, fmt.Errorf("window move global flag: %w", err)
+	}
+	return val, nil
+}

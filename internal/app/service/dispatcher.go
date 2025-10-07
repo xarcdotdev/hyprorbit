@@ -341,11 +341,6 @@ func (d *Dispatcher) handleModule(ctx context.Context, req ipc.Request) (ipc.Res
 			return errorResponse(err.Error(), 1), nil, nil
 		}
 		return d.successResponse(nil)
-	case "workspace-align":
-		if err := d.alignWorkspace(ctx); err != nil {
-			return errorResponse(err.Error(), 1), nil, nil
-		}
-		return d.successResponse(nil)
 	case "get":
 		return d.handleModuleGet(ctx), nil, nil
 	case "jump-next":
@@ -631,6 +626,11 @@ func (d *Dispatcher) handleWindowMove(ctx context.Context, req ipc.Request) (ipc
 		return errorResponse(err.Error(), 2), nil, nil
 	}
 
+	global, err := parseGlobalFlag(req.Flags)
+	if err != nil {
+		return errorResponse(err.Error(), 2), nil, nil
+	}
+
 	hypr, err := d.requireHyprctlClient()
 	if err != nil {
 		return errorResponse(err.Error(), 1), nil, nil
@@ -641,7 +641,7 @@ func (d *Dispatcher) handleWindowMove(ctx context.Context, req ipc.Request) (ipc
 		return errorResponse(err.Error(), 1), nil, nil
 	}
 
-	clients, err := d.resolveWindowsForMove(ctx, hypr, modSvc, windowRef)
+	clients, err := d.resolveWindowsForMove(ctx, hypr, modSvc, windowRef, global)
 	if err != nil {
 		return errorResponse(err.Error(), 1), nil, nil
 	}
@@ -659,13 +659,13 @@ func (d *Dispatcher) handleWindowMove(ctx context.Context, req ipc.Request) (ipc
 }
 
 // resolveWindowsForMove resolves window references and validates the selection.
-func (d *Dispatcher) resolveWindowsForMove(ctx context.Context, hypr runtime.HyprctlClient, modSvc *module.Service, windowRef string) ([]hyprctl.ClientInfo, error) {
+func (d *Dispatcher) resolveWindowsForMove(ctx context.Context, hypr runtime.HyprctlClient, modSvc *module.Service, windowRef string, global bool) ([]hyprctl.ClientInfo, error) {
 	var orbitProvider orbit.Provider
 	if modSvc != nil {
 		orbitProvider = modSvc
 	}
 
-	clients, err := window.ResolveSelection(ctx, hypr, orbitProvider, windowRef)
+	clients, err := window.ResolveSelection(ctx, hypr, orbitProvider, windowRef, global)
 	if err != nil {
 		return nil, err
 	}
@@ -816,45 +816,6 @@ func filterWorkspaceSummaries(summaries []module.WorkspaceSummary, filter string
 	return filtered
 }
 
-func (d *Dispatcher) alignWorkspace(ctx context.Context) error {
-       hypr, err := d.requireHyprctlClient()
-       if err != nil {
-               return fmt.Errorf("workspace align: %w", err)
-       }
-       modSvc, err := d.requireModuleService()
-       if err != nil {
-               return fmt.Errorf("workspace align: %w", err)
-       }
-       names := modSvc.ModuleNames()
-       if len(names) == 0 {
-               return fmt.Errorf("workspace align: no modules configured")
-       }
-		orbitName := d.getActiveOrbitName(ctx, modSvc)
-		if orbitName == "" {
-			return fmt.Errorf("workspace reset: active orbit not available")
-		}
-       targetWorkspace := module.WorkspaceName(names[0], orbitName)
-
-       // Move current active workspace windows into the target before switching.
-       ws, err := hypr.ActiveWorkspace(ctx)
-       if err == nil && ws != nil {
-               if err := workspace.EnsureExists(ctx, hypr, targetWorkspace, ws.Name); err != nil {
-                       return fmt.Errorf("workspace align: failed to ensure workspace %q exists: %w", targetWorkspace, err)
-               }
-
-               clients := d.collectClients(ctx)
-               moveErr := workspace.MoveClients(ctx, hypr, clients, targetWorkspace, false)
-               if moveErr != nil {
-                       return fmt.Errorf("workspace align: failed to move windows to %q: %w", targetWorkspace, moveErr)
-               }
-       }
-       res, err := modSvc.Jump(ctx, names[0])
-       if err != nil {
-               return fmt.Errorf("workspace align: failed to jump to module %q: %w", names[0], err)
-       }
-       d.recordModuleResult(res)
-       return nil
-}
 
 // resetWorkspaces destroys all workspaces except configured modules and the primary workspace.
 func (d *Dispatcher) resetWorkspaces(ctx context.Context) error {
@@ -931,13 +892,35 @@ func (d *Dispatcher) resetWorkspaces(ctx context.Context) error {
 	}
 	d.infof("[hyprorbit] workspace reset: workspaces scheduled for kill: %s", strings.Join(targets, ", "))
 
-	// TODO: move all windows from all workspaces to safe workspace
+	// Move all windows from all workspaces (across all orbits) to the primary safe workspace
+	d.debugf("resetWorkspaces: moving all windows to safe workspace %q before killing workspaces", primaryWorkspace)
+	clients, err := window.DecodeClients(ctx, hypr)
+	if err != nil {
+		return fmt.Errorf("workspace reset: failed to get clients: %w", err)
+	}
 
-	// Align workspace to move any windows from active workspace to primary workspace
-	// d.debugf("resetWorkspaces: aligning workspace to migrate windows to safe workspace")
-	// if err := d.alignWorkspace(ctx); err != nil {
-	// 	return fmt.Errorf("workspace reset: failed to align workspace before cleanup: %w", err)
-	// }
+	clientsToMove := make([]hyprctl.ClientInfo, 0, len(clients))
+	for _, client := range clients {
+		sanitized := window.SanitizeClient(client)
+		wsName := sanitized.WorkspaceName()
+		if wsName == "" || strings.HasPrefix(wsName, "special") {
+			continue
+		}
+		// Only move windows from workspaces that will be killed
+		// if _, isSafe := safeSet[wsName]; !isSafe {
+			clientsToMove = append(clientsToMove, sanitized)
+		// }
+	}
+
+	if len(clientsToMove) > 0 {
+		d.debugf("resetWorkspaces: moving %d windows to safe workspace", len(clientsToMove))
+		if err := workspace.MoveClients(ctx, hypr, clientsToMove, primaryWorkspace, false); err != nil {
+			return fmt.Errorf("workspace reset: failed to move windows to safe workspace: %w", err)
+		}
+		d.infof("[hyprorbit] workspace reset: moved %d windows to %q", len(clientsToMove), primaryWorkspace)
+	} else {
+		d.debugf("resetWorkspaces: no windows need to be moved")
+	}
 
 	commands := make([][]string, 0, len(targets))
 	for _, name := range targets {
