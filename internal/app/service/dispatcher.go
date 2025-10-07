@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -174,6 +175,7 @@ func (d *Dispatcher) Handle(ctx context.Context, req ipc.Request) (ipc.Response,
 	}
 }
 
+// handleDaemon processes daemon control commands like status checks and config reloads.
 func (d *Dispatcher) handleDaemon(ctx context.Context, req ipc.Request) (ipc.Response, StreamHandler) {
 	resp := ipc.NewResponse(false)
 	switch req.Action {
@@ -192,6 +194,7 @@ func (d *Dispatcher) handleDaemon(ctx context.Context, req ipc.Request) (ipc.Res
 	}
 }
 
+// handleOrbit processes orbit switching and query commands.
 func (d *Dispatcher) handleOrbit(ctx context.Context, req ipc.Request) (ipc.Response, StreamHandler) {
 	d.debugf("handleOrbit: action=%q args=%v", req.Action, req.Args)
 	resp := ipc.NewResponse(false)
@@ -228,6 +231,8 @@ func (d *Dispatcher) handleOrbit(ctx context.Context, req ipc.Request) (ipc.Resp
 		}
 		return resp, nil
 	case "set":
+		//TODO shouldnt there be an handleOrbitSet as well?
+		// What about invalidateClients() vs publishSnapshot?
 		if len(req.Args) != 1 {
 			return errorResponse("orbit set requires exactly one argument", 2), nil
 		}
@@ -240,12 +245,7 @@ func (d *Dispatcher) handleOrbit(ctx context.Context, req ipc.Request) (ipc.Resp
 		if err := orbitSvc.Set(ctx, target); err != nil {
 			return errorResponse(err.Error(), 1), nil
 		}
-		primaryWorkspace, err := d.jumpToPrimaryModuleWorkspace(ctx)
-		if err != nil {
-			return errorResponse(err.Error(), 1), nil
-		}
-		d.debugf("handleOrbit set: primaryWorkspace=%q", primaryWorkspace)
-		if err := d.alignMonitorsToOrbit(ctx, target, primaryWorkspace); err != nil {
+		if err := d.alignMonitorsToOrbit(ctx, target, false); err != nil {
 			return errorResponse(err.Error(), 1), nil
 		}
 		d.state.InvalidateClients()
@@ -259,6 +259,7 @@ func (d *Dispatcher) handleOrbit(ctx context.Context, req ipc.Request) (ipc.Resp
 	}
 }
 
+// handleOrbitStep cycles through the orbit sequence by the given delta (1 for next, -1 for prev).
 func (d *Dispatcher) handleOrbitStep(ctx context.Context, orbitSvc *orbit.Service, delta int) (ipc.Response, StreamHandler) {
 	d.debugf("handleOrbitStep: delta=%d", delta)
 	resp := ipc.NewResponse(false)
@@ -292,12 +293,7 @@ func (d *Dispatcher) handleOrbitStep(ctx context.Context, orbitSvc *orbit.Servic
 	if err := orbitSvc.Set(ctx, name); err != nil {
 		return errorResponse(err.Error(), 1), nil
 	}
-	primaryWorkspace, err := d.jumpToPrimaryModuleWorkspace(ctx)
-	if err != nil {
-		return errorResponse(err.Error(), 1), nil
-	}
-	d.debugf("handleOrbitStep: primaryWorkspace=%q", primaryWorkspace)
-	if err := d.alignMonitorsToOrbit(ctx, name, primaryWorkspace); err != nil {
+	if err := d.alignMonitorsToOrbit(ctx, name, false); err != nil {
 		return errorResponse(err.Error(), 1), nil
 	}
 	d.state.InvalidateClients()
@@ -312,6 +308,7 @@ func (d *Dispatcher) handleOrbitStep(ctx context.Context, orbitSvc *orbit.Servic
 	return resp, nil
 }
 
+// handleModule processes module commands including list, jump, focus, and seed operations.
 func (d *Dispatcher) handleModule(ctx context.Context, req ipc.Request) (ipc.Response, StreamHandler, error) {
 	d.debugf("handleModule: action=%q args=%v", req.Action, req.Args)
 	resp := ipc.NewResponse(false)
@@ -398,6 +395,7 @@ func (d *Dispatcher) handleModule(ctx context.Context, req ipc.Request) (ipc.Res
 	}
 }
 
+// handleModuleJump switches to the specified module workspace, creating temporary workspaces as needed.
 func (d *Dispatcher) handleModuleJump(ctx context.Context, modSvc *module.Service, moduleName string) (ipc.Response, StreamHandler, error) {
 	hypr := d.state.HyprctlClient()
 	originWorkspace := ""
@@ -419,19 +417,16 @@ func (d *Dispatcher) handleModuleJump(ctx context.Context, modSvc *module.Servic
 		if hypr == nil {
 			return errorResponse("hyprctl client unavailable", 1), nil, nil
 		}
-		record, err := modSvc.ActiveOrbit(ctx)
-		if err != nil {
-			return errorResponse(err.Error(), 1), nil, nil
-		}
-		if record == nil {
+		orbitName := d.getActiveOrbitName(ctx, modSvc)
+		if orbitName == "" {
 			return errorResponse("active orbit not available", 1), nil, nil
 		}
-		workspace := module.WorkspaceName(moduleName, record.Name)
+		workspace := module.WorkspaceName(moduleName, orbitName)
 		if err := hypr.SwitchWorkspace(ctx, workspace); err != nil {
 			return errorResponse(err.Error(), 1), nil, nil
 		}
-		d.state.RegisterTempModule(record.Name, moduleName)
-		result = &module.Result{Action: "jumped", Workspace: workspace, Orbit: record.Name}
+		d.state.RegisterTempModule(orbitName, moduleName)
+		result = &module.Result{Action: "jumped", Workspace: workspace, Orbit: orbitName}
 	}
 
 	if originWasTemp && originWorkspace != "" && result != nil && strings.TrimSpace(result.Workspace) != originWorkspace {
@@ -441,6 +436,7 @@ func (d *Dispatcher) handleModuleJump(ctx context.Context, modSvc *module.Servic
 	return d.successResponseWithModuleResult(result)
 }
 
+// handleModuleStep cycles through modules relative to the active workspace by the given delta.
 func (d *Dispatcher) handleModuleStep(ctx context.Context, modSvc *module.Service, delta int) (ipc.Response, StreamHandler, error) {
 	resp := ipc.NewResponse(false)
 
@@ -504,6 +500,7 @@ func (d *Dispatcher) handleModuleStep(ctx context.Context, modSvc *module.Servic
 	return resp, nil, nil
 }
 
+// handleModuleCreate creates a new temporary module workspace and switches to it.
 func (d *Dispatcher) handleModuleCreate(ctx context.Context, modSvc *module.Service) (ipc.Response, StreamHandler, error) {
 	hypr, err := d.requireHyprctlClient()
 	if err != nil {
@@ -522,15 +519,12 @@ func (d *Dispatcher) handleModuleCreate(ctx context.Context, modSvc *module.Serv
 // Helper functions
 // *********************************************
 
+// createModuleWorkspace creates a new temporary module workspace for the active orbit.
 func (d *Dispatcher) createModuleWorkspace(ctx context.Context, modSvc *module.Service, hypr runtime.HyprctlClient, origin string) (*module.Result, error) {
-	record, err := modSvc.ActiveOrbit(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if record == nil || util.IsEmptyOrWhitespace(record.Name) {
+	orbitName := d.getActiveOrbitName(ctx, modSvc)
+	if orbitName == "" {
 		return nil, fmt.Errorf("active orbit not available")
 	}
-	orbitName := strings.TrimSpace(record.Name)
 
 	result, err := workspace.CreateTemporary(ctx, hypr, d.state, orbitName, origin)
 	if err != nil {
@@ -540,6 +534,7 @@ func (d *Dispatcher) createModuleWorkspace(ctx context.Context, modSvc *module.S
 	return &module.Result{Action: "created", Workspace: result.Workspace, Orbit: result.Orbit}, nil
 }
 
+// handleWindow processes window management commands like move and list.
 func (d *Dispatcher) handleWindow(ctx context.Context, req ipc.Request) (ipc.Response, StreamHandler, error) {
 	d.debugf("handleWindow: action=%q args=%v", req.Action, req.Args)
 	switch req.Action {
@@ -552,6 +547,7 @@ func (d *Dispatcher) handleWindow(ctx context.Context, req ipc.Request) (ipc.Res
 	}
 }
 
+// handleWindowList returns a list of all windows with their module and orbit assignments.
 func (d *Dispatcher) handleWindowList(ctx context.Context, req ipc.Request) (ipc.Response, StreamHandler, error) {
 	if len(req.Args) > 0 {
 		return errorResponse("window list does not accept arguments", 2), nil, nil
@@ -621,6 +617,7 @@ func (d *Dispatcher) handleWindowList(ctx context.Context, req ipc.Request) (ipc
 	return resp, nil, nil
 }
 
+// handleWindowMove relocates one or more windows to a target module workspace.
 func (d *Dispatcher) handleWindowMove(ctx context.Context, req ipc.Request) (ipc.Response, StreamHandler, error) {
 	if len(req.Args) != 2 {
 		return errorResponse("window move requires a window reference and target", 2), nil, nil
@@ -708,6 +705,7 @@ func formatMoveResults(results []windowMoveResult) any {
 	return results
 }
 
+// handleModuleGet returns the module status for the currently active workspace.
 func (d *Dispatcher) handleModuleGet(ctx context.Context) ipc.Response {
 	resp := ipc.NewResponse(false)
 	modSvc, err := d.requireModuleService()
@@ -747,6 +745,7 @@ func (d *Dispatcher) handleModuleGet(ctx context.Context) ipc.Response {
 	return resp
 }
 
+// publishSnapshot broadcasts the current daemon state to all subscribed clients.
 func (d *Dispatcher) publishSnapshot() {
 	if d == nil || d.state == nil {
 		return
@@ -756,6 +755,7 @@ func (d *Dispatcher) publishSnapshot() {
 	}
 }
 
+// streamModuleStatus returns a handler that streams state snapshots to a connected client.
 func (d *Dispatcher) streamModuleStatus() StreamHandler {
 	return func(ctx context.Context, conn net.Conn) error {
 		if d == nil || d.state == nil {
@@ -795,6 +795,7 @@ func (d *Dispatcher) streamModuleStatus() StreamHandler {
 	}
 }
 
+// filterWorkspaceSummaries filters workspace summaries by the given filter (all, active, inactive).
 func filterWorkspaceSummaries(summaries []module.WorkspaceSummary, filter string) []module.WorkspaceSummary {
 	if filter == "all" {
 		return summaries
@@ -815,6 +816,47 @@ func filterWorkspaceSummaries(summaries []module.WorkspaceSummary, filter string
 	return filtered
 }
 
+func (d *Dispatcher) alignWorkspace(ctx context.Context) error {
+       hypr, err := d.requireHyprctlClient()
+       if err != nil {
+               return fmt.Errorf("workspace align: %w", err)
+       }
+       modSvc, err := d.requireModuleService()
+       if err != nil {
+               return fmt.Errorf("workspace align: %w", err)
+       }
+       names := modSvc.ModuleNames()
+       if len(names) == 0 {
+               return fmt.Errorf("workspace align: no modules configured")
+       }
+		orbitName := d.getActiveOrbitName(ctx, modSvc)
+		if orbitName == "" {
+			return fmt.Errorf("workspace reset: active orbit not available")
+		}
+       targetWorkspace := module.WorkspaceName(names[0], orbitName)
+
+       // Move current active workspace windows into the target before switching.
+       ws, err := hypr.ActiveWorkspace(ctx)
+       if err == nil && ws != nil {
+               if err := workspace.EnsureExists(ctx, hypr, targetWorkspace, ws.Name); err != nil {
+                       return fmt.Errorf("workspace align: failed to ensure workspace %q exists: %w", targetWorkspace, err)
+               }
+
+               clients := d.collectClients(ctx)
+               moveErr := workspace.MoveClients(ctx, hypr, clients, targetWorkspace, false)
+               if moveErr != nil {
+                       return fmt.Errorf("workspace align: failed to move windows to %q: %w", targetWorkspace, moveErr)
+               }
+       }
+       res, err := modSvc.Jump(ctx, names[0])
+       if err != nil {
+               return fmt.Errorf("workspace align: failed to jump to module %q: %w", names[0], err)
+       }
+       d.recordModuleResult(res)
+       return nil
+}
+
+// resetWorkspaces destroys all workspaces except configured modules and the primary workspace.
 func (d *Dispatcher) resetWorkspaces(ctx context.Context) error {
 	d.debugf("resetWorkspaces: starting workspace reset")
 	hypr, err := d.requireHyprctlClient()
@@ -825,14 +867,10 @@ func (d *Dispatcher) resetWorkspaces(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("workspace reset: %w", err)
 	}
-	record, err := modSvc.ActiveOrbit(ctx)
-	if err != nil {
-		return fmt.Errorf("workspace reset: failed to get active orbit: %w", err)
-	}
-	if record == nil || util.IsEmptyOrWhitespace(record.Name) {
+	orbitName := d.getActiveOrbitName(ctx, modSvc)
+	if orbitName == "" {
 		return fmt.Errorf("workspace reset: active orbit not available")
 	}
-	orbitName := strings.TrimSpace(record.Name)
 	d.debugf("resetWorkspaces: active orbit=%q", orbitName)
 
 	primaryWorkspace, err := d.jumpToFirstModuleWorkspace(ctx, modSvc)
@@ -841,7 +879,7 @@ func (d *Dispatcher) resetWorkspaces(ctx context.Context) error {
 	}
 	d.debugf("resetWorkspaces: primaryWorkspace=%q", primaryWorkspace)
 
-	if err := d.alignMonitorsToOrbit(ctx, orbitName, primaryWorkspace); err != nil {
+	if err := d.alignMonitorsToOrbit(ctx, orbitName, false); err != nil {
 		return fmt.Errorf("workspace reset: %w", err)
 	}
 	workspaces, err := hypr.Workspaces(ctx)
@@ -886,17 +924,20 @@ func (d *Dispatcher) resetWorkspaces(ctx context.Context) error {
 		}
 		targets = append(targets, name)
 	}
+	
 	if len(targets) == 0 {
 		d.infof("[hyprorbit] workspace reset: no workspaces to kill")
 		return nil
 	}
 	d.infof("[hyprorbit] workspace reset: workspaces scheduled for kill: %s", strings.Join(targets, ", "))
 
+	// TODO: move all windows from all workspaces to safe workspace
+
 	// Align workspace to move any windows from active workspace to primary workspace
-	d.debugf("resetWorkspaces: aligning workspace to migrate windows to safe workspace")
-	if err := d.alignWorkspace(ctx); err != nil {
-		return fmt.Errorf("workspace reset: failed to align workspace before cleanup: %w", err)
-	}
+	// d.debugf("resetWorkspaces: aligning workspace to migrate windows to safe workspace")
+	// if err := d.alignWorkspace(ctx); err != nil {
+	// 	return fmt.Errorf("workspace reset: failed to align workspace before cleanup: %w", err)
+	// }
 
 	commands := make([][]string, 0, len(targets))
 	for _, name := range targets {
@@ -921,7 +962,8 @@ func (d *Dispatcher) resetWorkspaces(ctx context.Context) error {
 	return nil
 }
 
-func (d *Dispatcher) alignMonitorsToOrbit(ctx context.Context, orbitName, primaryWorkspace string) error {
+// alignMonitorsToOrbit ensures all monitors (or only the focused one) display a primary module workspace for the given orbit.
+func (d *Dispatcher) alignMonitorsToOrbit(ctx context.Context, orbitName string, onlyFocusedMonitor bool) error {
 	if d == nil || d.state == nil {
 		return nil
 	}
@@ -929,71 +971,88 @@ func (d *Dispatcher) alignMonitorsToOrbit(ctx context.Context, orbitName, primar
 	if hypr == nil {
 		return nil
 	}
-	modSvc := d.state.ModuleService()
-	if modSvc == nil {
-		return nil
-	}
-	moduleNames := modSvc.ModuleNames()
-	if len(moduleNames) == 0 {
-		return nil
-	}
 	monitors, err := hypr.Monitors(ctx)
 	if err != nil {
 		return fmt.Errorf("align monitors: failed to list monitors: %w", err)
 	}
 	if len(monitors) == 0 {
-		res, err := modSvc.Jump(ctx, moduleNames[0])
-		if err != nil {
-			return fmt.Errorf("align monitors: failed to jump to module %q: %w", moduleNames[0], err)
-		}
-		d.recordModuleResult(res)
+		d.debugf("alignMonitorsToOrbit: no monitors reported, skipping alignment")
 		return nil
 	}
-	orderedModules := append([]string(nil), moduleNames...)
-	if !util.IsEmptyOrWhitespace(primaryWorkspace) {
-		primaryWorkspace = strings.TrimSpace(primaryWorkspace)
-		for idx, name := range moduleNames {
-			if module.WorkspaceName(name, orbitName) == primaryWorkspace {
-				orderedModules = append(moduleNames[idx:], moduleNames[:idx]...)
-				break
-			}
+
+	if len(monitors) <= 1 || onlyFocusedMonitor {
+		d.debugf("alignMonitorsToOrbit: aligning focused monitor only (monitors=%d flag=%v)", len(monitors), onlyFocusedMonitor)
+		if _, err := d.jumpToPrimaryModuleWorkspace(ctx); err != nil {
+			return fmt.Errorf("align monitors: %w", err)
 		}
+		return nil
 	}
-	// Remember Focused monitor for focusing it again at the end
-	var focusedMonitor string
-	for _, mon := range monitors {
-		if mon.Focused {
-			focusedMonitor = mon.Name
-			break
-		}
+
+	// Identify focused monitor
+	focusedIdx := slices.IndexFunc(monitors, func(m hyprctl.Monitor) bool { return m.Focused })
+	if focusedIdx == -1 {
+		focusedIdx = 0
+		d.debugf("alignMonitorsToOrbit: focused monitor not reported, defaulting to index 0 (%q)", monitors[0].Name)
 	}
+
+	// Create list of monitors without focused monitor and add it as last entry
+	ordered := make([]hyprctl.Monitor, 0, len(monitors))
 	for idx, mon := range monitors {
-		moduleName := orderedModules[idx%len(orderedModules)]
-		res, err := modSvc.FocusMonitorJump(ctx, mon.Name, moduleName)
-		if err != nil {
-			return fmt.Errorf("align monitors: failed to jump monitor %q to module %q: %w", mon.Name, moduleName, err)
+		if idx == focusedIdx {
+			continue
 		}
-		d.recordModuleResult(res)
-		// workspace := ""
-		// if res != nil {
-		// 	workspace = strings.TrimSpace(res.Workspace)
-		// }
-		// if workspace == "" {
-		// 	workspace = module.WorkspaceName(moduleName, orbitName)
-		// }
-		// fmt.Fprintf(os.Stdout, "[hyprorbit] align monitors: monitor %s -> %s (%s)\n", mon.Name, moduleName, workspace)
+		ordered = append(ordered, mon)
 	}
-	if focusedMonitor != "" {
-		if err := hypr.Dispatch(ctx, "focusmonitor", focusedMonitor); err != nil {
-			return fmt.Errorf("align monitors: failed to restore focus to monitor %q: %w", focusedMonitor, err)
+	ordered = append(ordered, monitors[focusedIdx])
+	for _, mon := range ordered {
+		d.debugf("alignMonitorsToOrbit: focusing monitor %q for orbit %q", mon.Name, orbitName)
+		if err := hypr.Dispatch(ctx, "focusmonitor", mon.Name); err != nil {
+			return fmt.Errorf("align monitors: failed to focus monitor %q: %w", mon.Name, err)
+		}
+		if _, err := d.jumpToPrimaryModuleWorkspace(ctx); err != nil {
+			return fmt.Errorf("align monitors: %w", err)
 		}
 	}
 	return nil
 }
 
-// jumpToPrimaryModuleWorkspace selects and jumps to the primary module workspace for the active orbit.
-// It chooses between the currently focused module or the last active module for this orbit,
-// based on user preference, then returns the workspace name.
+// getActiveOrbitName retrieves the active orbit name, returning empty string on error.
+func (d *Dispatcher) getActiveOrbitName(ctx context.Context, modSvc *module.Service) string {
+	activeOrbit, err := modSvc.ActiveOrbit(ctx)
+	if err != nil || activeOrbit == nil {
+		return ""
+	}
+	return strings.TrimSpace(activeOrbit.Name)
+}
+
+// getCurrentModuleAndMonitor extracts the current module name and monitor from the active workspace.
+func (d *Dispatcher) getCurrentModuleAndMonitor(ctx context.Context, hypr runtime.HyprctlClient) (moduleName, monitorName string) {
+	ws, err := hypr.ActiveWorkspace(ctx)
+	if err != nil || ws == nil {
+		return "", ""
+	}
+	monitorName = strings.TrimSpace(ws.Monitor)
+	if name := strings.TrimSpace(ws.Name); name != "" {
+		if mod, _, err := module.ParseWorkspaceName(name); err == nil {
+			moduleName = mod
+		}
+	}
+	return moduleName, monitorName
+}
+
+// buildPrimaryWorkspaceCandidates returns an ordered list of candidate module names based on preferences.
+func (d *Dispatcher) buildPrimaryWorkspaceCandidates(currentModule, lastActive string, preferLastActive bool) []string {
+	candidates := make([]string, 0, 2)
+	if preferLastActive {
+		candidates = append(candidates, lastActive, currentModule)
+	} else {
+		candidates = append(candidates, currentModule, lastActive)
+	}
+	return candidates
+}
+
+// Selects and jumps to the primary module workspace for the active orbit and focused monitor.
+// It chooses between the currently focused module or the last active module for this orbit, based on config, then returns the workspace name.
 func (d *Dispatcher) jumpToPrimaryModuleWorkspace(ctx context.Context) (string, error) {
 	d.debugf("jumpToPrimaryModuleWorkspace: selecting primary workspace")
 	modSvc, err := d.requireModuleService()
@@ -1004,83 +1063,54 @@ func (d *Dispatcher) jumpToPrimaryModuleWorkspace(ctx context.Context) (string, 
 	if err != nil {
 		return "", err
 	}
-	activeOrbit, err := modSvc.ActiveOrbit(ctx)
-	if err != nil {
-		return "", fmt.Errorf("failed to get active orbit: %w", err)
-	}
-	var orbitName string
-	if activeOrbit != nil {
-		orbitName = strings.TrimSpace(activeOrbit.Name)
-	}
+
+	orbitName := d.getActiveOrbitName(ctx, modSvc)
 	d.debugf("jumpToPrimaryModuleWorkspace: active orbit=%q", orbitName)
 
-	// Determine current Module and Monitor for finding out last active Module
-	var currentModule string
-	var currentMonitor string
-	if ws, err := hypr.ActiveWorkspace(ctx); err == nil && ws != nil {
-		name := strings.TrimSpace(ws.Name)
-		currentMonitor = strings.TrimSpace(ws.Monitor)
-		d.debugf("jumpToPrimaryModuleWorkspace: active workspace=%q monitor=%q", name, currentMonitor)
-		if moduleName, _, err := module.ParseWorkspaceName(name); err == nil {
-			currentModule = moduleName
-			d.debugf("jumpToPrimaryModuleWorkspace: parsed current module=%q", currentModule)
-		} else {
-			d.debugf("jumpToPrimaryModuleWorkspace: failed to parse workspace name: %v", err)
-		}
-	} else {
-		d.debugf("jumpToPrimaryModuleWorkspace: failed to get active workspace: %v", err)
-	}
+	currentModule, currentMonitor := d.getCurrentModuleAndMonitor(ctx, hypr)
+	d.debugf("jumpToPrimaryModuleWorkspace: current module=%q monitor=%q", currentModule, currentMonitor)
+
 	var lastActive string
 	if orbitName != "" {
 		lastActive = strings.TrimSpace(d.state.LastActiveModule(orbitName, currentMonitor))
-		d.debugf("jumpToPrimaryModuleWorkspace: last active module for orbit %q monitor=%q: %q", orbitName, currentMonitor, lastActive)
-	} else {
-		d.debugf("jumpToPrimaryModuleWorkspace: no active orbit, cannot retrieve last active module")
+		d.debugf("jumpToPrimaryModuleWorkspace: last active module=%q", lastActive)
 	}
 
 	preferLastActive := d.state.PreferLastActiveFirst()
-	d.debugf("jumpToPrimaryModuleWorkspace: preference=last-active-first: %v", preferLastActive)
-
-	candidates := make([]string, 0, 2)
-	if preferLastActive {
-		candidates = append(candidates, lastActive, currentModule)
-	} else {
-		candidates = append(candidates, currentModule, lastActive)
-	}
-	d.debugf("jumpToPrimaryModuleWorkspace: candidate list (ordered): %v", candidates)
+	candidates := d.buildPrimaryWorkspaceCandidates(currentModule, lastActive, preferLastActive)
+	d.debugf("jumpToPrimaryModuleWorkspace: candidates (ordered): %v", candidates)
 
 	seen := make(map[string]struct{}, len(candidates))
 	for i, candidate := range candidates {
 		candidate = strings.TrimSpace(candidate)
 		if candidate == "" {
-			d.debugf("jumpToPrimaryModuleWorkspace: candidate[%d] is empty, skipping", i)
 			continue
 		}
 		if _, ok := seen[candidate]; ok {
-			d.debugf("jumpToPrimaryModuleWorkspace: candidate[%d] %q already seen, skipping", i, candidate)
 			continue
 		}
 		seen[candidate] = struct{}{}
 		if _, ok := modSvc.Module(candidate); !ok {
-			d.debugf("jumpToPrimaryModuleWorkspace: candidate[%d] %q is not a configured module, skipping", i, candidate)
+			d.debugf("jumpToPrimaryModuleWorkspace: candidate[%d] %q not configured, skipping", i, candidate)
 			continue
 		}
-		d.debugf("jumpToPrimaryModuleWorkspace: attempting to jump to candidate[%d] %q", i, candidate)
+		d.debugf("jumpToPrimaryModuleWorkspace: jumping to candidate[%d] %q", i, candidate)
 		res, err := modSvc.Jump(ctx, candidate)
 		if err != nil {
 			return "", fmt.Errorf("failed to jump to module %q: %w", candidate, err)
 		}
 		d.recordModuleResult(res)
-		d.debugf("jumpToPrimaryModuleWorkspace: successfully jumped to workspace=%q", res.Workspace)
+		d.debugf("jumpToPrimaryModuleWorkspace: jumped to workspace=%q", res.Workspace)
 		return strings.TrimSpace(res.Workspace), nil
 	}
 
-	d.debugf("jumpToPrimaryModuleWorkspace: no valid candidates found, returning empty")
-	return "", nil
+	d.debugf("jumpToPrimaryModuleWorkspace: no valid candidates, falling back to jumpToFirstModuleWorkspace")
+	return d.jumpToFirstModuleWorkspace(ctx, modSvc)
 }
 
 // jumpToFirstModuleWorkspace jumps to the first configured module workspace for the active orbit.
 // This provides deterministic workspace selection, ignoring user preferences and history.
+// It skips modules that are already in use by other monitors to avoid conflicts.
 func (d *Dispatcher) jumpToFirstModuleWorkspace(ctx context.Context, modSvc *module.Service) (string, error) {
 	moduleNames := modSvc.ModuleNames()
 	d.debugf("jumpToFirstModuleWorkspace: modules=%v", moduleNames)
@@ -1088,6 +1118,55 @@ func (d *Dispatcher) jumpToFirstModuleWorkspace(ctx context.Context, modSvc *mod
 		return "", fmt.Errorf("no modules configured")
 	}
 
+	hypr, err := d.requireHyprctlClient()
+	if err != nil {
+		return "", err
+	}
+
+	orbitName := d.getActiveOrbitName(ctx, modSvc)
+	d.debugf("jumpToFirstModuleWorkspace: active orbit=%q", orbitName)
+
+	// Get current workspaces to identify which modules are already in use
+	workspaces, err := hypr.Workspaces(ctx)
+	if err != nil {
+		d.debugf("jumpToFirstModuleWorkspace: failed to list workspaces, proceeding without filtering: %v", err)
+		// Fall back to jumping to first module without checking
+		result, err := modSvc.Jump(ctx, moduleNames[0])
+		if err != nil {
+			return "", fmt.Errorf("failed to jump to first module %q: %w", moduleNames[0], err)
+		}
+		d.recordModuleResult(result)
+		d.debugf("jumpToFirstModuleWorkspace: jumped to workspace=%q", result.Workspace)
+		return strings.TrimSpace(result.Workspace), nil
+	}
+
+	// Build set of active workspace names
+	activeWorkspaces := make(map[string]struct{}, len(workspaces))
+	for _, ws := range workspaces {
+		activeWorkspaces[strings.TrimSpace(ws.Name)] = struct{}{}
+	}
+	d.debugf("jumpToFirstModuleWorkspace: active workspaces: %v", activeWorkspaces)
+
+	// Find first module that is not already active
+	for _, moduleName := range moduleNames {
+		workspaceName := module.WorkspaceName(moduleName, orbitName)
+		if _, inUse := activeWorkspaces[workspaceName]; inUse {
+			d.debugf("jumpToFirstModuleWorkspace: skipping %q (workspace %q already in use)", moduleName, workspaceName)
+			continue
+		}
+
+		d.debugf("jumpToFirstModuleWorkspace: attempting to jump to module %q", moduleName)
+		result, err := modSvc.Jump(ctx, moduleName)
+		if err != nil {
+			return "", fmt.Errorf("failed to jump to module %q: %w", moduleName, err)
+		}
+		d.recordModuleResult(result)
+		d.debugf("jumpToFirstModuleWorkspace: jumped to workspace=%q", result.Workspace)
+		return strings.TrimSpace(result.Workspace), nil
+	}
+
+	// All modules are in use, fall back to first module
+	d.debugf("jumpToFirstModuleWorkspace: all modules in use, falling back to first module")
 	result, err := modSvc.Jump(ctx, moduleNames[0])
 	if err != nil {
 		return "", fmt.Errorf("failed to jump to first module %q: %w", moduleNames[0], err)
@@ -1097,46 +1176,7 @@ func (d *Dispatcher) jumpToFirstModuleWorkspace(ctx context.Context, modSvc *mod
 	return strings.TrimSpace(result.Workspace), nil
 }
 
-func (d *Dispatcher) alignWorkspace(ctx context.Context) error {
-	hypr, err := d.requireHyprctlClient()
-	if err != nil {
-		return fmt.Errorf("workspace align: %w", err)
-	}
-	modSvc, err := d.requireModuleService()
-	if err != nil {
-		return fmt.Errorf("workspace align: %w", err)
-	}
-	names := modSvc.ModuleNames()
-	if len(names) == 0 {
-		return fmt.Errorf("workspace align: no modules configured")
-	}
-	record, err := modSvc.ActiveOrbit(ctx)
-	if err != nil {
-		return fmt.Errorf("workspace align: failed to get active orbit: %w", err)
-	}
-	targetWorkspace := module.WorkspaceName(names[0], record.Name)
-
-	// Move current active workspace windows into the target before switching.
-	ws, err := hypr.ActiveWorkspace(ctx)
-	if err == nil && ws != nil {
-		if err := workspace.EnsureExists(ctx, hypr, targetWorkspace, ws.Name); err != nil {
-			return fmt.Errorf("workspace align: failed to ensure workspace %q exists: %w", targetWorkspace, err)
-		}
-
-		clients := d.collectClients(ctx)
-		moveErr := workspace.MoveClients(ctx, hypr, clients, targetWorkspace, false)
-		if moveErr != nil {
-			return fmt.Errorf("workspace align: failed to move windows to %q: %w", targetWorkspace, moveErr)
-		}
-	}
-	res, err := modSvc.Jump(ctx, names[0])
-	if err != nil {
-		return fmt.Errorf("workspace align: failed to jump to module %q: %w", names[0], err)
-	}
-	d.recordModuleResult(res)
-	return nil
-}
-
+// moveClientToModule relocates a single window to the specified module target, optionally following focus.
 func (d *Dispatcher) moveClientToModule(ctx context.Context, modSvc *module.Service, hypr runtime.HyprctlClient, client hyprctl.ClientInfo, targetRef string, follow bool) (windowMoveResult, error) {
 	var result windowMoveResult
 	client = window.SanitizeClient(client)
@@ -1174,6 +1214,7 @@ func (d *Dispatcher) moveClientToModule(ctx context.Context, modSvc *module.Serv
 	return result, nil
 }
 
+// resolveModuleTarget parses a module target reference and returns the resolved target workspace details.
 func (d *Dispatcher) resolveModuleTarget(ctx context.Context, modSvc *module.Service, hypr runtime.HyprctlClient, origin, ref string) (moduleTarget, error) {
 	var target moduleTarget
 	if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(ref)), "module:") {
@@ -1202,14 +1243,10 @@ func (d *Dispatcher) resolveModuleTarget(ctx context.Context, modSvc *module.Ser
 		return target, nil
 	}
 
-	record, err := modSvc.ActiveOrbit(ctx)
-	if err != nil {
-		return target, err
-	}
-	if record == nil || util.IsEmptyOrWhitespace(record.Name) {
+	orbitName := d.getActiveOrbitName(ctx, modSvc)
+	if orbitName == "" {
 		return target, fmt.Errorf("active orbit not available")
 	}
-	orbitName := strings.TrimSpace(record.Name)
 
 	names := d.allModuleNamesForOrbit(modSvc, orbitName)
 	if len(names) == 0 {
@@ -1236,6 +1273,7 @@ func (d *Dispatcher) resolveModuleTarget(ctx context.Context, modSvc *module.Ser
 	return target, nil
 }
 
+// selectModuleName resolves a module selector (next, prev, index:N, regex:PATTERN, or name) to a module name.
 func (d *Dispatcher) selectModuleName(names []string, current, spec string) (string, error) {
 	spec = strings.TrimSpace(spec)
 	if spec == "" {
@@ -1294,24 +1332,27 @@ func (d *Dispatcher) selectModuleName(names []string, current, spec string) (str
 	return "", fmt.Errorf("module %q not configured", spec)
 }
 
+// currentModuleForOrbit returns the module name from the active workspace or last active module for the given orbit.
 func (d *Dispatcher) currentModuleForOrbit(ctx context.Context, hypr runtime.HyprctlClient, orbitName string) string {
 	orbitName = strings.TrimSpace(orbitName)
-	var monitorName string
-	if hypr != nil {
+	currentModule, monitorName := d.getCurrentModuleAndMonitor(ctx, hypr)
+
+	// If we're currently in the target orbit, return the current module
+	if currentModule != "" {
 		if ws, err := hypr.ActiveWorkspace(ctx); err == nil && ws != nil {
-			name := strings.TrimSpace(ws.Name)
-			monitorName = strings.TrimSpace(ws.Monitor)
-			if moduleName, orbit, err := module.ParseWorkspaceName(name); err == nil && orbit == orbitName {
-				return moduleName
+			if _, orbit, err := module.ParseWorkspaceName(strings.TrimSpace(ws.Name)); err == nil && orbit == orbitName {
+				return currentModule
 			}
 		}
 	}
+
 	if d.state == nil {
 		return ""
 	}
 	return strings.TrimSpace(d.state.LastActiveModule(orbitName, monitorName))
 }
 
+// recordModuleResult tracks workspace activation from a module operation result.
 func (d *Dispatcher) recordModuleResult(result *module.Result) {
 	if d == nil || d.state == nil || result == nil {
 		return
@@ -1322,6 +1363,7 @@ func (d *Dispatcher) recordModuleResult(result *module.Result) {
 	d.state.recordWorkspaceActivation(result.Workspace)
 }
 
+// collectClients retrieves all Hyprland windows from the hyprctl client.
 func (d *Dispatcher) collectClients(ctx context.Context) []hyprctl.ClientInfo {
 	hypr := d.state.HyprctlClient()
 	if hypr == nil {
@@ -1334,6 +1376,7 @@ func (d *Dispatcher) collectClients(ctx context.Context) []hyprctl.ClientInfo {
 	return clients
 }
 
+// cleanupTemporaryWorkspace destroys the specified temporary workspace if it is empty.
 func (d *Dispatcher) cleanupTemporaryWorkspace(ctx context.Context, hypr runtime.HyprctlClient, targetWorkspace string) {
 	if workspace.CleanupTemporary(ctx, hypr, d.state, targetWorkspace) {
 		d.state.InvalidateClients()
