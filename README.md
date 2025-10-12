@@ -8,7 +8,7 @@
 <h2 align="center">hyprørbit v0.1</h2>
 
   <p align="center">
-Lightweight workspace orchestration for <a href="https://github.com/hyprwm/Hyprland">Hyprland Power-Users</a>.
+Lightweight workspace orchestration for <a href="https://github.com/hyprwm/Hyprland">Hyprland</a> Power-Users.
     <br>
 
 **hyprorbit** is a stateful daemon + client system for Hyprland workspace management, written in Go.
@@ -33,19 +33,14 @@ Lightweight workspace orchestration for <a href="https://github.com/hyprwm/Hyprl
 
 ⚠️ **This is experimental!** ⚠️ 
 
-**Its probably better done via native Hyprland plugin. I just wanted to see how working with multiple sets of workspaces feels. (its nice for me so far)**
 
-**Current limitiantions:**
+**Current limitations:**
 
-- Window rules: Auto-assigning apps to workspaces via Hyprland windowrules are not orbit-aware.
+- Window rules: Auto-assigning apps to workspaces via Hyprland windowrules are not orbit-aware 
+-> hyprorbit uses `module focus`.
 
-- Waybar Integration: Default Hyprland workspace indicator for waybar works, but is not orbit-aware. <a href="docs/waybar_configuration.md">You can create a custom module</a>)  
-
-**What’s good:**
-
-- It’s lightweight and fast -> Good responsiveness & low system load.
-
-- Works.
+- Waybar Integration: Default Hyprland workspace indicator for waybar works, but is not orbit-aware. 
+-> <a href="docs/waybar_configuration.md">You can create a custom module</a>)  
 
 
 <!-- ABOUT THE PROJECT -->
@@ -61,7 +56,10 @@ Lightweight workspace orchestration for <a href="https://github.com/hyprwm/Hyprl
 
 ➡️ Use `hyprorbit module jump code` to instantly switch to your code workspace.
 
-➡️ Use `hyprorbit orbit next` to cycle through your configured orbits.
+➡️ Use `hyprorbit orbit next` to cycle through your configured workspace-sets.
+
+➡️ Use `hyprorbit module focus code` to focus/move/launch your coding applications.
+
 
 <!-- <div align="center">
 ![Product Demo][product-screenshot]
@@ -69,7 +67,7 @@ Lightweight workspace orchestration for <a href="https://github.com/hyprwm/Hyprl
 
 ### Key Features
 
-- **Orbit contexts** - separate workspace sets for different projects
+- **Orbit contexts** - separate sets of workspaces for different projects
 - **Stable hotkeys** - same workspace-keybindings across all orbits
 - **Focus-or-launch** - focus windows in current orbit instead of launching
 - **Sub-5ms response times** via persistent daemon
@@ -100,7 +98,7 @@ sudo cp hyprorbit hyprorbitd /usr/local/bin/
 ```sh
 # Recommended: via Hyprland Config (order is important here)
 exec-once = hyprorbitd # start daemon
-exec-once = hyprorbit --autostart # for workspace initialization
+exec-once = hyprorbit init --autostart # for workspace initialization
 
 # Or manually for testing
 ./hyprorbitd
@@ -170,7 +168,7 @@ See `hyprorbit --help` for full options.
 | `hyprorbit orbit next/prev` | Cycle through configured orbits             |
 | `hyprorbit module focus <name>` | Smart focus-or-launch for module        |
 | `hyprorbit module jump <name>` | Simple workspace switching               |
-| `hyprorbit window move <window> <target>` | Move/focus windows across modules |
+| `hyprorbit window move <window> <target>` | Move/focus windows across modules and orbits |
 
 ### Orbit Commands
 
@@ -256,20 +254,36 @@ hyprorbit window move workspace module:next
 
 # Move matching windows (by class) on the active workspace
 hyprorbit window move class:"^firefox$" module:comm
+
+# Move all windows from all orbits (global search)
+hyprorbit window move all module:code --global 
+
+# Move matching windows from all orbits
+hyprorbit window move class:"^firefox$" module:comm --global 
+
+# Move focused window to the code module in the beta orbit
+hyprorbit window move current code/beta
+
+# Explicit orbit target syntax
+hyprorbit window move current module:code/orbit:beta
 ```
 
-**Supported module targets:**
+**Supported targets:**
 - `module:<name>` – explicit module name (e.g., `module:code`)
 - `module:next` / `module:prev` – cycle through configured modules
 - `module:index:<n>` – zero-free index (1-based) into the module list
 - `module:regex:<pattern>` – first module matching the given regex
 - `module:create` – spawn a temporary workspace (`<n>-<orbit>`) before moving
+- `module:<name>/orbit:<orbit>` – move directly into a module on a specific orbit; shorthand `<module>/<orbit>` also works
 
-By default moves focus to the destination workspace; pass `--silent` to keep focus on the current workspace after the move.
+**Flags:**
+- `--silent` – keep focus on the current workspace after moving (default: false)
+- `--global` – search for windows across all orbits instead of current orbit only (default: false)
 
 **Window selectors:**
 - `current` – focused window (default)
 - `workspace` – every window currently on the active workspace
+- `all` – every window across all workspaces (excludes special workspaces)
 
 - `orbit:<selector>` – look across the entire active orbit (e.g. `orbit:class:foot`)
 - `global:<selector>` – look across every workspace (e.g. `global:title:"Media"`)
@@ -280,7 +294,7 @@ By default moves focus to the destination workspace; pass `--silent` to keep foc
 - `tag:<pattern>` – regex applied to Hyprland window tags (opt-in)
 - `regex:<pattern>` – applies regex to all fields (class/title/initial)
 
-Selectors default to the active workspace; prefix with `orbit:` or `global:` to expand the search scope.
+By default, selectors search within the active workspace. Use the `--global` flag or prefix selectors with `orbit:` or `global:` to expand the search scope.
 
 ### Output Formats
 
@@ -464,12 +478,14 @@ hyprorbit module focus code --match "class:.*" --no-move
 - ✅ Multi Monitor Support
 - ✅ Client-server architecture (IPC)
 - ✅ Native Hyprland socket integration
+- ✅ Module seeding (populate workspace with multiple apps)
+- ✅ Support for Hyprland tag for adressing windows
+- ✅ Global window targeting with `--global` flag for cross-orbit window operations
 
 ### Planned Features
-- [ ] Configurable notifications
-- [ ] Module seeding (populate workspace with multiple apps)
-- [ ] Hyprland tag support for adressing windows
-- [ ] Making window targeting global instead only of only  in focused workspace  
+- [ ] Make Orbit-Alignment across monitors optional (Have independent orbits on each monitor)
+- [ ] Add window destroy command for orbit/workspace based cleanup
+- [ ] Configurable notifications  
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
