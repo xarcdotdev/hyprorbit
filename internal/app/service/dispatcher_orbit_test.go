@@ -161,8 +161,9 @@ func (f *fakeOrbitTracker) Sequence(context.Context) ([]string, error) {
 func TestAlignMonitorsToOrbitPreferredWorkspaceNoRedundantSwitch(t *testing.T) {
 	stub := &alignHyprStub{
 		monitors: []hyprctl.Monitor{{
-			Name:    "HDMI-A-1",
-			Focused: true,
+			Name:            "HDMI-A-1",
+			Focused:         true,
+			ActiveWorkspace: hyprctl.Workspace{Name: "code-beta"},
 		}},
 		workspaces: []hyprctl.Workspace{{
 			Name:    "code-beta",
