@@ -300,7 +300,9 @@ func (s *DaemonState) PublishSnapshot(ctx context.Context) error {
 		return nil
 	}
 
-	s.refreshOrbitWindowCounts(ctx)
+	if s.needsOrbitWindowCounts() {
+		s.refreshOrbitWindowCounts(ctx)
+	}
 
 	snapshot.Generated = time.Now().UTC()
 	broadcaster.Publish(*snapshot)
@@ -655,6 +657,14 @@ func (s *DaemonState) orbitWindowCountsSnapshot() map[string]int {
 		clone[name] = count
 	}
 	return clone
+}
+
+func (s *DaemonState) needsOrbitWindowCounts() bool {
+	cfg := s.Config()
+	if cfg == nil {
+		return false
+	}
+	return cfg.Orbit.CycleMode == config.OrbitCycleModeNotEmpty
 }
 
 // LastActiveModule returns the most recent module observed within the orbit.
