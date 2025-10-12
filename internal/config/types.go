@@ -74,6 +74,7 @@ type ModuleDefaults struct {
 // OrbitConfig captures global orbit behaviour settings.
 type OrbitConfig struct {
 	SwitchPreference string         `yaml:"switch_preference"`
+	CycleMode        string         `yaml:"orbit_cycle_mode"`
 	Extras           map[string]any `yaml:",inline"`
 }
 
@@ -113,6 +114,29 @@ func ParseOrbitSwitchPreference(value string) (OrbitSwitchPreference, error) {
 		return OrbitSwitchPreference(value), nil
 	default:
 		return "", fmt.Errorf("config: orbit switch_preference %q invalid (expected %q or %q)", original, OrbitSwitchPreferenceSameModuleFirst, OrbitSwitchPreferenceLastActiveFirst)
+	}
+}
+
+// OrbitCycleMode determines which orbits appear in the cycling sequence.
+type OrbitCycleMode string
+
+const (
+	OrbitCycleModeAll      OrbitCycleMode = "all"
+	OrbitCycleModeNotEmpty OrbitCycleMode = "not-empty"
+)
+
+// ParseOrbitCycleMode normalizes cycle mode strings and applies defaults.
+func ParseOrbitCycleMode(value string) (OrbitCycleMode, error) {
+	original := value
+	value = strings.TrimSpace(strings.ToLower(value))
+	if value == "" {
+		return OrbitCycleModeAll, nil
+	}
+	switch OrbitCycleMode(value) {
+	case OrbitCycleModeAll, OrbitCycleModeNotEmpty:
+		return OrbitCycleMode(value), nil
+	default:
+		return "", fmt.Errorf("config: orbit cycle_mode %q invalid (expected %q or %q)", original, OrbitCycleModeAll, OrbitCycleModeNotEmpty)
 	}
 }
 
@@ -163,6 +187,9 @@ func (c *Config) Validate() error {
 	}
 
 	if _, err := ParseOrbitSwitchPreference(c.Orbit.SwitchPreference); err != nil {
+		errs = append(errs, err)
+	}
+	if _, err := ParseOrbitCycleMode(c.Orbit.CycleMode); err != nil {
 		errs = append(errs, err)
 	}
 

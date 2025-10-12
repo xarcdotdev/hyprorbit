@@ -21,8 +21,8 @@ import (
 const snapshotQueryTimeout = 1200 * time.Millisecond
 
 type orbitActivityRecord struct {
-	LastModule  string
-	Monitors map[string]string
+	LastModule string
+	Monitors   map[string]string
 }
 
 // DaemonState aggregates long-lived daemon dependencies for hyprorbitd.
@@ -39,6 +39,9 @@ type DaemonState struct {
 
 	orbitActivityMu sync.RWMutex
 	orbitActivity   map[string]orbitActivityRecord
+
+	orbitWindowCountsMu sync.RWMutex
+	orbitWindowCounts   map[string]int
 
 	tempModulesMu sync.RWMutex
 	tempModules   map[string][]string
@@ -101,17 +104,18 @@ func NewDaemonState(ctx context.Context, opts Options) (*DaemonState, error) {
 	}
 
 	state := &DaemonState{
-		opts:          opts,
-		loaderOpts:    loaderOpts,
-		config:        cfg,
-		orbitMgr:      orbitMgr,
-		orbitSvc:      orbitSvc,
-		moduleSvc:     moduleSvc,
-		hyprctl:       hyprClient,
-		orbitActivity: make(map[string]orbitActivityRecord, len(cfg.Orbits)),
-		tempModules:   make(map[string][]string),
-		broadcaster:   NewStatusBroadcaster(0),
-		logger:        func(string, ...any) {},
+		opts:              opts,
+		loaderOpts:        loaderOpts,
+		config:            cfg,
+		orbitMgr:          orbitMgr,
+		orbitSvc:          orbitSvc,
+		moduleSvc:         moduleSvc,
+		hyprctl:           hyprClient,
+		orbitActivity:     make(map[string]orbitActivityRecord, len(cfg.Orbits)),
+		orbitWindowCounts: make(map[string]int, len(cfg.Orbits)),
+		tempModules:       make(map[string][]string),
+		broadcaster:       NewStatusBroadcaster(0),
+		logger:            func(string, ...any) {},
 	}
 
 	state.refreshOrbitActivity(cfg.Orbits)
@@ -260,6 +264,9 @@ func (s *DaemonState) Reload(ctx context.Context) error {
 	}
 
 	s.refreshOrbitActivity(cfg.Orbits)
+	s.orbitWindowCountsMu.Lock()
+	s.orbitWindowCounts = make(map[string]int, len(cfg.Orbits))
+	s.orbitWindowCountsMu.Unlock()
 
 	s.mu.Lock()
 	s.config = cfg
@@ -292,6 +299,8 @@ func (s *DaemonState) PublishSnapshot(ctx context.Context) error {
 	if snapshot == nil {
 		return nil
 	}
+
+	s.refreshOrbitWindowCounts(ctx)
 
 	snapshot.Generated = time.Now().UTC()
 	broadcaster.Publish(*snapshot)
@@ -587,6 +596,67 @@ func (s *DaemonState) refreshOrbitActivity(orbits []config.OrbitRecord) {
 	s.orbitActivity = next
 }
 
+func (s *DaemonState) refreshOrbitWindowCounts(ctx context.Context) {
+	if s == nil {
+		return
+	}
+	svc := s.ModuleService()
+	if svc == nil {
+		return
+	}
+
+	baseCtx := ctx
+	if baseCtx == nil {
+		baseCtx = context.Background()
+	}
+	baseCtx, cancel := context.WithTimeout(baseCtx, snapshotQueryTimeout)
+	defer cancel()
+
+	summaries, err := svc.WorkspaceSummaries(baseCtx)
+	if err != nil {
+		s.logf("refresh orbit window counts: %v", err)
+		return
+	}
+
+	counts := make(map[string]int, len(summaries))
+	for _, summary := range summaries {
+		orbitName := strings.TrimSpace(summary.Orbit)
+		if orbitName == "" {
+			continue
+		}
+		counts[orbitName] += summary.Windows
+	}
+
+	if cfg := s.Config(); cfg != nil {
+		for _, orbitRecord := range cfg.Orbits {
+			name := strings.TrimSpace(orbitRecord.Name)
+			if name == "" {
+				continue
+			}
+			if _, ok := counts[name]; !ok {
+				counts[name] = 0
+			}
+		}
+	}
+
+	s.orbitWindowCountsMu.Lock()
+	s.orbitWindowCounts = counts
+	s.orbitWindowCountsMu.Unlock()
+}
+
+func (s *DaemonState) orbitWindowCountsSnapshot() map[string]int {
+	s.orbitWindowCountsMu.RLock()
+	defer s.orbitWindowCountsMu.RUnlock()
+	if len(s.orbitWindowCounts) == 0 {
+		return map[string]int{}
+	}
+	clone := make(map[string]int, len(s.orbitWindowCounts))
+	for name, count := range s.orbitWindowCounts {
+		clone[name] = count
+	}
+	return clone
+}
+
 // LastActiveModule returns the most recent module observed within the orbit.
 // When a monitor name is provided, it returns the last module seen on that monitor,
 // falling back to the orbit-wide record when no monitor-specific entry exists.
@@ -640,6 +710,7 @@ func (s *DaemonState) OrbitSummaries(ctx context.Context) ([]orbit.Summary, erro
 			status = "active"
 		}
 		summary := orbit.Summary{Name: name, Status: status}
+		summary.Windows = s.OrbitWindowCount(name)
 		if record, ok := activity[name]; ok {
 			if moduleName := strings.TrimSpace(record.LastModule); moduleName != "" {
 				summary.ActiveModule = moduleName
@@ -648,6 +719,20 @@ func (s *DaemonState) OrbitSummaries(ctx context.Context) ([]orbit.Summary, erro
 		summaries = append(summaries, summary)
 	}
 	return summaries, nil
+}
+
+// OrbitWindowCount returns the cached number of windows assigned to the orbit.
+func (s *DaemonState) OrbitWindowCount(orbitName string) int {
+	orbitName = strings.TrimSpace(orbitName)
+	if orbitName == "" {
+		return 0
+	}
+	s.orbitWindowCountsMu.RLock()
+	defer s.orbitWindowCountsMu.RUnlock()
+	if s.orbitWindowCounts == nil {
+		return 0
+	}
+	return s.orbitWindowCounts[orbitName]
 }
 
 func (s *DaemonState) consumeHyprEvents(ctx context.Context, sub *events.Subscriber) {

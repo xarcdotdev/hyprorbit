@@ -300,7 +300,7 @@ func PrintOrbitSummaries(w io.Writer, opts Options, summaries []orbit.Summary) e
 		}
 		return encodeJSON(w, summaries)
 	}
-	headers := []string{"NAME", "STATUS", "ACTIVE_MODULE"}
+	headers := []string{"NAME", "STATUS", "ACTIVE_MODULE", "WINDOWS"}
 	rows := make([][]string, len(summaries))
 	widths := make([]int, len(headers))
 	for i, header := range headers {
@@ -310,7 +310,8 @@ func PrintOrbitSummaries(w io.Writer, opts Options, summaries []orbit.Summary) e
 	for i, summary := range summaries {
 		status := dashIfEmpty(summary.Status)
 		activeModule := dashIfEmpty(summary.ActiveModule)
-		row := []string{summary.Name, status, activeModule}
+		windows := fmt.Sprintf("%d", summary.Windows)
+		row := []string{summary.Name, status, activeModule, windows}
 		rows[i] = row
 		for col, value := range row {
 			if l := runeLen(value); l > widths[col] {
@@ -337,6 +338,7 @@ func PrintOrbitSummaries(w io.Writer, opts Options, summaries []orbit.Summary) e
 		if row[2] != "-" {
 			colors[2] = colorOrEmpty(opts, ansiCyan)
 		}
+		colors[3] = colorOrEmpty(opts, ansiGrey)
 		if err := printTableRow(w, row, widths, colors, reset, false); err != nil {
 			return err
 		}

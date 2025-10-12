@@ -76,9 +76,11 @@ defaults:
 
 orbit:
   switch_preference: last-active-first
+  # orbit_cycle_mode: not-empty  # Optional: cycle populated orbits plus one empty fallback (default: all)
 
 # Debug logging configuration
 debug:
   enabled: false                       # Enable debug logging
   log_file: "/tmp/hyprorbit-debug.log" # Optional: defaults to /tmp/hyprorbit-debug.log
   dispatcher: false                    # Enable dispatcher-specific debug logs
+  hyprctl: false                       # Enable hyprctl-specific debug logs

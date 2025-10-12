@@ -40,6 +40,7 @@ func DefaultConfig() *Config {
 		},
 		Orbit: OrbitConfig{
 			SwitchPreference: string(OrbitSwitchPreferenceLastActiveFirst),
+			CycleMode:        string(OrbitCycleModeAll),
 		},
 	}
 }

@@ -12,4 +12,5 @@ type Summary struct {
 	Name         string `json:"name"`
 	Status       string `json:"status"`
 	ActiveModule string `json:"active_module,omitempty"`
+	Windows      int    `json:"windows,omitempty"`
 }

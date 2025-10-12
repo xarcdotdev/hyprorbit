@@ -28,7 +28,7 @@ func TestResolveWindowSelection_RegexFieldMatching(t *testing.T) {
 
 	orbitProv := fakeOrbitProvider{name: "alpha"}
 
-	clients, err := window.ResolveSelection(ctx, hypr, nil, "class:thunderbird")
+	clients, err := window.ResolveSelection(ctx, hypr, nil, "class:thunderbird", false)
 	if err != nil {
 		t.Fatalf("ResolveSelection returned error: %v", err)
 	}
@@ -39,7 +39,7 @@ func TestResolveWindowSelection_RegexFieldMatching(t *testing.T) {
 		t.Fatalf("expected thunderbird class, got %q", clients[0].Class)
 	}
 
-	clients, err = window.ResolveSelection(ctx, hypr, nil, "title:Thunderbird")
+	clients, err = window.ResolveSelection(ctx, hypr, nil, "title:Thunderbird", false)
 	if err != nil {
 		t.Fatalf("ResolveSelection returned error: %v", err)
 	}
@@ -50,7 +50,7 @@ func TestResolveWindowSelection_RegexFieldMatching(t *testing.T) {
 		t.Fatalf("unexpected title match %q", clients[0].Title)
 	}
 
-	clients, err = window.ResolveSelection(ctx, hypr, nil, "tag:mail")
+	clients, err = window.ResolveSelection(ctx, hypr, nil, "tag:mail", false)
 	if err != nil {
 		t.Fatalf("ResolveSelection returned error: %v", err)
 	}
@@ -58,7 +58,7 @@ func TestResolveWindowSelection_RegexFieldMatching(t *testing.T) {
 		t.Fatalf("expected 1 client for tag match, got %d", len(clients))
 	}
 
-	clients, err = window.ResolveSelection(ctx, hypr, nil, "regex:mail")
+	clients, err = window.ResolveSelection(ctx, hypr, nil, "regex:mail", false)
 	if err != nil {
 		t.Fatalf("ResolveSelection returned error: %v", err)
 	}
@@ -66,7 +66,7 @@ func TestResolveWindowSelection_RegexFieldMatching(t *testing.T) {
 		t.Fatalf("expected 0 clients for unqualified tag match, got %d", len(clients))
 	}
 
-	clients, err = window.ResolveSelection(ctx, hypr, nil, "regex:class:thunderbird")
+	clients, err = window.ResolveSelection(ctx, hypr, nil, "regex:class:thunderbird", false)
 	if err != nil {
 		t.Fatalf("legacy regex prefix should still work, got error: %v", err)
 	}
@@ -74,7 +74,7 @@ func TestResolveWindowSelection_RegexFieldMatching(t *testing.T) {
 		t.Fatalf("expected 1 client for legacy syntax, got %d", len(clients))
 	}
 
-	clients, err = window.ResolveSelection(ctx, hypr, orbitProv, "orbit:class:foot")
+	clients, err = window.ResolveSelection(ctx, hypr, orbitProv, "orbit:class:foot", false)
 	if err != nil {
 		t.Fatalf("orbit scoped selection returned error: %v", err)
 	}
@@ -82,7 +82,7 @@ func TestResolveWindowSelection_RegexFieldMatching(t *testing.T) {
 		t.Fatalf("expected orbit scope to return foot client, got %+v", clients)
 	}
 
-	clients, err = window.ResolveSelection(ctx, hypr, orbitProv, "global:class:mpv")
+	clients, err = window.ResolveSelection(ctx, hypr, orbitProv, "global:class:mpv", false)
 	if err != nil {
 		t.Fatalf("global scoped selection returned error: %v", err)
 	}

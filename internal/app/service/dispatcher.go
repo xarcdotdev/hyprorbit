@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 
+	"hyprorbit/internal/config"
 	"hyprorbit/internal/hyprctl"
 	"hyprorbit/internal/ipc"
 	"hyprorbit/internal/module"
@@ -274,22 +275,35 @@ func (d *Dispatcher) handleOrbitStep(ctx context.Context, orbitSvc *orbit.Servic
 	if err != nil {
 		return errorResponse(err.Error(), 1), nil
 	}
-	d.debugf("handleOrbitStep: current=%q sequence=%v", current, seq)
-	idx := util.IndexOf(seq, current)
+	cycleMode := config.OrbitCycleModeAll
+	if d.state != nil {
+		if cfg := d.state.Config(); cfg != nil {
+			cycleMode = cfg.Orbit.CycleMode
+		}
+	}
+	sequence := seq
+	if d.state != nil {
+		sequence = d.filteredOrbitSequence(seq, current, cycleMode)
+	}
+	idx := util.IndexOf(sequence, current)
 	if idx == -1 {
-		return errorResponse(fmt.Sprintf("orbit: current orbit %q not found", current), 1), nil
+		idx = util.IndexOf(seq, current)
+		if idx == -1 {
+			return errorResponse(fmt.Sprintf("orbit: current orbit %q not found", current), 1), nil
+		}
+		sequence = seq
 	}
 	var nextIdx int
 	if delta > 0 {
-		nextIdx = (idx + 1) % len(seq)
+		nextIdx = (idx + 1) % len(sequence)
 	} else {
 		nextIdx = idx - 1
 		if nextIdx < 0 {
-			nextIdx = len(seq) - 1
+			nextIdx = len(sequence) - 1
 		}
 	}
-	name := seq[nextIdx]
-	d.debugf("handleOrbitStep: switching from %q (index %d) to %q (index %d)", current, idx, name, nextIdx)
+	name := sequence[nextIdx]
+	d.debugf("handleOrbitStep: current=%q sequence=%v filtered=%v next=%q (index %d)", current, seq, sequence, name, nextIdx)
 	if err := orbitSvc.Set(ctx, name); err != nil {
 		return errorResponse(err.Error(), 1), nil
 	}
@@ -304,8 +318,58 @@ func (d *Dispatcher) handleOrbitStep(ctx context.Context, orbitSvc *orbit.Servic
 	if err := ipc.AssignData(&resp, record); err != nil {
 		return errorResponse(err.Error(), 1), nil
 	}
+	// Snapshot refresh triggers window count cache updates used for orbit cycling.
 	d.publishSnapshot()
 	return resp, nil
+}
+
+func (d *Dispatcher) filteredOrbitSequence(seq []string, current string, mode config.OrbitCycleMode) []string {
+	if mode != config.OrbitCycleModeNotEmpty || len(seq) <= 1 || d == nil || d.state == nil {
+		return seq
+	}
+
+	hasWindows := false
+	for _, name := range seq {
+		if d.state.OrbitWindowCount(name) > 0 {
+			hasWindows = true
+			break
+		}
+	}
+	if !hasWindows {
+		return seq
+	}
+
+	idx := util.IndexOf(seq, current)
+	if idx == -1 {
+		idx = 0
+	}
+
+	nextEmpty := ""
+	for offset := 1; offset < len(seq); offset++ {
+		candidate := seq[(idx+offset)%len(seq)]
+		if d.state.OrbitWindowCount(candidate) == 0 {
+			nextEmpty = candidate
+			break
+		}
+	}
+
+	filtered := make([]string, 0, len(seq))
+	for _, name := range seq {
+		switch {
+		case name == current:
+			filtered = append(filtered, name)
+		case d.state.OrbitWindowCount(name) > 0:
+			filtered = append(filtered, name)
+		case nextEmpty != "" && name == nextEmpty:
+			filtered = append(filtered, name)
+		}
+	}
+
+	if len(filtered) <= 1 {
+		return seq
+	}
+
+	return filtered
 }
 
 // handleModule processes module commands including list, jump, focus, and seed operations.
@@ -649,6 +713,7 @@ func (d *Dispatcher) handleWindowMove(ctx context.Context, req ipc.Request) (ipc
 	if err := validateMoveTarget(targetRef); err != nil {
 		return errorResponse(err.Error(), 2), nil, nil
 	}
+	// NOTE: When orbit-level move targets (e.g. orbit:NAME) arrive, ensure snapshot refresh keeps window counts aligned.
 
 	results, err := d.moveClientsToTarget(ctx, modSvc, hypr, clients, targetRef, silent)
 	if err != nil {

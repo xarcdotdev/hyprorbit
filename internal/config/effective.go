@@ -73,6 +73,7 @@ type ModuleSettings struct {
 // OrbitSettings contains resolved orbit behaviour toggles.
 type OrbitSettings struct {
 	SwitchPreference OrbitSwitchPreference
+	CycleMode        OrbitCycleMode
 }
 
 // WaybarSettings captures configuration specific to Waybar integrations.
@@ -252,11 +253,16 @@ func BuildEffective(source string, cfg *Config) (*EffectiveConfig, error) {
 		return nil, err
 	}
 
+	cycleMode, err := ParseOrbitCycleMode(cfg.Orbit.CycleMode)
+	if err != nil {
+		return nil, err
+	}
+
 	return &EffectiveConfig{
 		Orbits:   orbits,
 		Modules:  modules,
 		Defaults: defaults,
-		Orbit:    OrbitSettings{SwitchPreference: pref},
+		Orbit:    OrbitSettings{SwitchPreference: pref, CycleMode: cycleMode},
 		Source:   source,
 		Warnings: warnings,
 		Waybar:   waybar,

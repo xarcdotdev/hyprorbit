@@ -98,6 +98,14 @@ func (s *stubHyprctl) MoveToWorkspace(_ context.Context, address, workspace stri
 	return nil
 }
 
+func (s *stubHyprctl) MoveToWorkspaceFollow(ctx context.Context, address, workspace string) error {
+	return s.MoveToWorkspace(ctx, address, workspace)
+}
+
+func (s *stubHyprctl) MoveToWorkspaceSilent(ctx context.Context, address, workspace string) error {
+	return s.MoveToWorkspace(ctx, address, workspace)
+}
+
 var _ OrbitAccessor = (*stubOrbitAccessor)(nil)
 var _ runtime.HyprctlClient = (*stubHyprctl)(nil)
 
