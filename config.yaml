@@ -32,33 +32,23 @@ modules:
       logic: try-all
       rules:
         - match: "class:^code$"
+          match: "class:^codium$"
+          match: "class:^nvim$"
           cmd: ["code"]
         - match: "class:^(ghostty|Alacritty|kitty)$"
-    seed:
-      - match: "class:^code$"
-        cmd: ["code"]
-      - match: "class:^(ghostty|Alacritty|kitty)$"
-        cmd: ["ghostty"]
+          cmd: ["ghostty", "new-window"]
+        - match: "title:Hyprland Wiki"
+          options: [move, float]
   gfx:
     focus:
       rules:
         - match: "class:^(Firefox|zen)$"
           cmd: ["zen-browser"]
-    seed:
-      - match: "class:^(Firefox|zen)$"
-        cmd: ["zen-browser"]
-      - match: "class:^Gimp$"
-        cmd: ["gimp"]
   comm:
     focus:
       rules:
         - match: "class:^thunderbird$"
           cmd: ["thunderbird"]
-    seed:
-      - match: "class:^thunderbird$"
-        cmd: ["thunderbird"]
-      # - match: "class:^TelegramDesktop$"
-      #   cmd: ["telegram-desktop"]
   media:
     focus:
       rules:
