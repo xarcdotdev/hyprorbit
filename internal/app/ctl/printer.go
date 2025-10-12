@@ -328,9 +328,9 @@ func PrintOrbitSummaries(w io.Writer, opts Options, summaries []orbit.Summary) e
 	for _, row := range rows {
 		colors := make([]string, len(row))
 		switch strings.ToLower(row[1]) {
-		case "active":
+		case "focused":
 			colors[1] = colorOrEmpty(opts, ansiGreen)
-		case "inactive":
+		case "sleeping":
 			colors[1] = colorOrEmpty(opts, ansiGrey)
 		default:
 			colors[1] = colorOrEmpty(opts, ansiYellow)

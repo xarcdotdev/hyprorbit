@@ -715,9 +715,9 @@ func (s *DaemonState) OrbitSummaries(ctx context.Context) ([]orbit.Summary, erro
 	activity := s.orbitActivitySnapshot()
 	summaries := make([]orbit.Summary, 0, len(seq))
 	for _, name := range seq {
-		status := "inactive"
+		status := "sleeping"
 		if name == current {
-			status = "active"
+			status = "focused"
 		}
 		summary := orbit.Summary{Name: name, Status: status}
 		summary.Windows = s.OrbitWindowCount(name)
