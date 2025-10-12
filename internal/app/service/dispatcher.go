@@ -344,21 +344,27 @@ func (d *Dispatcher) filteredOrbitSequence(seq []string, current string, mode co
 		idx = 0
 	}
 
+	includeEmpty := d.state.OrbitWindowCount(current) > 0
+
 	nextEmpty := ""
-	for offset := 1; offset < len(seq); offset++ {
-		candidate := seq[(idx+offset)%len(seq)]
-		if d.state.OrbitWindowCount(candidate) == 0 {
-			nextEmpty = candidate
-			break
+	if includeEmpty {
+		for i := idx + 1; i < len(seq); i++ {
+			if d.state.OrbitWindowCount(seq[i]) == 0 {
+				nextEmpty = seq[i]
+				break
+			}
 		}
 	}
 
 	filtered := make([]string, 0, len(seq))
-	for _, name := range seq {
+	for i, name := range seq {
+		count := d.state.OrbitWindowCount(name)
 		switch {
 		case name == current:
 			filtered = append(filtered, name)
-		case d.state.OrbitWindowCount(name) > 0:
+		case count > 0:
+			filtered = append(filtered, name)
+		case i <= idx:
 			filtered = append(filtered, name)
 		case nextEmpty != "" && name == nextEmpty:
 			filtered = append(filtered, name)
