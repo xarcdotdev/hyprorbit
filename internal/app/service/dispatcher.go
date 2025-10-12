@@ -816,7 +816,6 @@ func filterWorkspaceSummaries(summaries []module.WorkspaceSummary, filter string
 	return filtered
 }
 
-
 // resetWorkspaces destroys all workspaces except configured modules and the primary workspace.
 func (d *Dispatcher) resetWorkspaces(ctx context.Context) error {
 	d.debugf("resetWorkspaces: starting workspace reset")
@@ -885,12 +884,13 @@ func (d *Dispatcher) resetWorkspaces(ctx context.Context) error {
 		}
 		targets = append(targets, name)
 	}
-	
+
 	if len(targets) == 0 {
 		d.infof("[hyprorbit] workspace reset: no workspaces to kill")
 		return nil
 	}
 	d.infof("[hyprorbit] workspace reset: workspaces scheduled for kill: %s", strings.Join(targets, ", "))
+	d.debugf("workspace reset: workspaces scheduled for kill: %s", strings.Join(targets, ", "))
 
 	// Move all windows from all workspaces (across all orbits) to the primary safe workspace
 	d.debugf("resetWorkspaces: moving all windows to safe workspace %q before killing workspaces", primaryWorkspace)
@@ -908,7 +908,7 @@ func (d *Dispatcher) resetWorkspaces(ctx context.Context) error {
 		}
 		// Only move windows from workspaces that will be killed
 		// if _, isSafe := safeSet[wsName]; !isSafe {
-			clientsToMove = append(clientsToMove, sanitized)
+		clientsToMove = append(clientsToMove, sanitized)
 		// }
 	}
 
@@ -958,6 +958,13 @@ func (d *Dispatcher) alignMonitorsToOrbit(ctx context.Context, orbitName string,
 	if err != nil {
 		return fmt.Errorf("align monitors: failed to list monitors: %w", err)
 	}
+
+	monitorSummaries := make([]string, 0, len(monitors))
+	for _, mon := range monitors {
+		monitorSummaries = append(monitorSummaries, fmt.Sprintf("%s(focused=%v, workspace=%q)", mon.Name, mon.Focused, strings.TrimSpace(mon.ActiveWorkspace.Name)))
+	}
+	d.debugf("alignMonitorsToOrbit: monitor snapshot (count=%d, focusedOnly=%v): %s", len(monitors), onlyFocusedMonitor, strings.Join(monitorSummaries, ", "))
+
 	if len(monitors) == 0 {
 		d.debugf("alignMonitorsToOrbit: no monitors reported, skipping alignment")
 		return nil
@@ -965,8 +972,10 @@ func (d *Dispatcher) alignMonitorsToOrbit(ctx context.Context, orbitName string,
 
 	if len(monitors) <= 1 || onlyFocusedMonitor {
 		d.debugf("alignMonitorsToOrbit: aligning focused monitor only (monitors=%d flag=%v)", len(monitors), onlyFocusedMonitor)
-		if _, err := d.jumpToPrimaryModuleWorkspace(ctx); err != nil {
+		if workspaceName, err := d.jumpToPrimaryModuleWorkspace(ctx); err != nil {
 			return fmt.Errorf("align monitors: %w", err)
+		} else {
+			d.debugf("alignMonitorsToOrbit: focused monitor aligned to workspace %q", workspaceName)
 		}
 		return nil
 	}
@@ -987,13 +996,20 @@ func (d *Dispatcher) alignMonitorsToOrbit(ctx context.Context, orbitName string,
 		ordered = append(ordered, mon)
 	}
 	ordered = append(ordered, monitors[focusedIdx])
+	orderedNames := make([]string, 0, len(ordered))
+	for _, mon := range ordered {
+		orderedNames = append(orderedNames, mon.Name)
+	}
+	d.debugf("alignMonitorsToOrbit: monitor focus order=%s", strings.Join(orderedNames, " -> "))
 	for _, mon := range ordered {
 		d.debugf("alignMonitorsToOrbit: focusing monitor %q for orbit %q", mon.Name, orbitName)
 		if err := hypr.Dispatch(ctx, "focusmonitor", mon.Name); err != nil {
 			return fmt.Errorf("align monitors: failed to focus monitor %q: %w", mon.Name, err)
 		}
-		if _, err := d.jumpToPrimaryModuleWorkspace(ctx); err != nil {
+		if workspaceName, err := d.jumpToPrimaryModuleWorkspace(ctx); err != nil {
 			return fmt.Errorf("align monitors: %w", err)
+		} else {
+			d.debugf("alignMonitorsToOrbit: monitor %q now on workspace %q", mon.Name, workspaceName)
 		}
 	}
 	return nil
