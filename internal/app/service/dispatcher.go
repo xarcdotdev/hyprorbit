@@ -1302,92 +1302,234 @@ func (d *Dispatcher) alignMonitorsToOrbit(ctx context.Context, orbitName string,
 		return fmt.Errorf("align monitors: failed to list monitors: %w", err)
 	}
 
-	monitorSummaries := make([]string, 0, len(monitors))
-	for _, mon := range monitors {
-		monitorSummaries = append(monitorSummaries, fmt.Sprintf("%s(focused=%v, workspace=%q)", mon.Name, mon.Focused, strings.TrimSpace(mon.ActiveWorkspace.Name)))
-	}
-	d.debugf("alignMonitorsToOrbit: monitor snapshot (count=%d, focusedOnly=%v): %s", len(monitors), onlyFocusedMonitor, strings.Join(monitorSummaries, ", "))
+	d.logMonitorSnapshot(monitors, onlyFocusedMonitor)
 
 	if len(monitors) == 0 {
 		d.debugf("alignMonitorsToOrbit: no monitors reported, skipping alignment")
 		return nil
 	}
 
-	// Find focused monitor, default to first if none
-	focusedIdx := slices.IndexFunc(monitors, func(m hyprctl.Monitor) bool { return m.Focused })
-	if focusedIdx == -1 {
-		focusedIdx = 0
-		d.debugf("alignMonitorsToOrbit: no focused monitor, defaulting to %q", monitors[0].Name)
-	}
-
-	focusedWorkspace := strings.TrimSpace(monitors[focusedIdx].ActiveWorkspace.Name)
+	focusedIdx := d.findFocusedMonitor(monitors)
 	preferredWorkspace = strings.TrimSpace(preferredWorkspace)
 
 	if len(monitors) <= 1 || onlyFocusedMonitor {
-		d.debugf("alignMonitorsToOrbit: aligning focused monitor only (monitors=%d flag=%v)", len(monitors), onlyFocusedMonitor)
-		if preferredWorkspace != "" {
-			if focusedWorkspace == preferredWorkspace {
-				d.debugf("alignMonitorsToOrbit: focused monitor already on preferred workspace %q", preferredWorkspace)
-				return nil
-			}
-			if err := hypr.SwitchWorkspace(ctx, preferredWorkspace); err != nil {
-				return fmt.Errorf("align monitors: switch to %q: %w", preferredWorkspace, err)
-			}
-			d.state.recordWorkspaceActivation(preferredWorkspace)
-			d.debugf("alignMonitorsToOrbit: focused monitor aligned to preferred workspace %q", preferredWorkspace)
+		return d.alignSingleMonitor(ctx, hypr, monitors[focusedIdx], preferredWorkspace)
+	}
+
+	return d.alignAllMonitors(ctx, hypr, monitors, focusedIdx, preferredWorkspace, orbitName)
+}
+
+func (d *Dispatcher) logMonitorSnapshot(monitors []hyprctl.Monitor, onlyFocusedMonitor bool) {
+	summaries := make([]string, len(monitors))
+	for i, mon := range monitors {
+		summaries[i] = fmt.Sprintf("%s(focused=%v, workspace=%q)",
+			mon.Name, mon.Focused, strings.TrimSpace(mon.ActiveWorkspace.Name))
+	}
+	d.debugf("alignMonitorsToOrbit: monitor snapshot (count=%d, focusedOnly=%v): %s",
+		len(monitors), onlyFocusedMonitor, strings.Join(summaries, ", "))
+}
+
+func (d *Dispatcher) findFocusedMonitor(monitors []hyprctl.Monitor) int {
+	idx := slices.IndexFunc(monitors, func(m hyprctl.Monitor) bool { return m.Focused })
+	if idx == -1 {
+		idx = 0
+		d.debugf("alignMonitorsToOrbit: no focused monitor, defaulting to %q", monitors[0].Name)
+	}
+	return idx
+}
+
+func (d *Dispatcher) alignSingleMonitor(ctx context.Context, hypr runtime.HyprctlClient, monitor hyprctl.Monitor, preferredWorkspace string) error {
+	d.debugf("alignMonitorsToOrbit: aligning focused monitor only")
+
+	currentWorkspace := strings.TrimSpace(monitor.ActiveWorkspace.Name)
+
+	if preferredWorkspace != "" {
+		if currentWorkspace == preferredWorkspace {
+			d.debugf("alignMonitorsToOrbit: monitor snapshot already on preferred workspace %q", preferredWorkspace)
 			return nil
 		}
-		if workspaceName, err := d.jumpToPrimaryModuleWorkspace(ctx); err != nil {
-			return fmt.Errorf("align monitors: %w", err)
-		} else {
-			d.debugf("alignMonitorsToOrbit: focused monitor aligned to workspace %q", workspaceName)
+		if activeWS, err := hypr.ActiveWorkspace(ctx); err == nil && activeWS != nil {
+			if strings.TrimSpace(activeWS.Name) == preferredWorkspace {
+				d.debugf("alignMonitorsToOrbit: active workspace already %q", preferredWorkspace)
+				return nil
+			}
 		}
+		if err := hypr.SwitchWorkspace(ctx, preferredWorkspace); err != nil {
+			return fmt.Errorf("align monitors: switch to %q: %w", preferredWorkspace, err)
+		}
+		d.state.recordWorkspaceActivation(preferredWorkspace)
+		d.debugf("alignMonitorsToOrbit: aligned to preferred workspace %q", preferredWorkspace)
 		return nil
 	}
 
-	// Create list of monitors without focused monitor and add it as last entry
-	ordered := make([]hyprctl.Monitor, 0, len(monitors))
-	for idx, mon := range monitors {
-		if idx == focusedIdx {
-			continue
-		}
-		ordered = append(ordered, mon)
+	workspaceName, err := d.jumpToPrimaryModuleWorkspace(ctx)
+	if err != nil {
+		return fmt.Errorf("align monitors: %w", err)
 	}
+	d.debugf("alignMonitorsToOrbit: aligned to workspace %q", workspaceName)
+	return nil
+}
+
+func (d *Dispatcher) alignAllMonitors(ctx context.Context, hypr runtime.HyprctlClient, monitors []hyprctl.Monitor, focusedIdx int, preferredWorkspace, orbitName string) error {
+	// Process non-focused monitors first, then focused last
+	ordered := append(append([]hyprctl.Monitor{}, monitors[:focusedIdx]...), monitors[focusedIdx+1:]...)
 	ordered = append(ordered, monitors[focusedIdx])
-	orderedNames := make([]string, 0, len(ordered))
-	for _, mon := range ordered {
-		orderedNames = append(orderedNames, mon.Name)
-	}
-	d.debugf("alignMonitorsToOrbit: monitor focus order=%s", strings.Join(orderedNames, " -> "))
+
+	d.logMonitorOrder(ordered)
+
 	for idx, mon := range ordered {
-		d.debugf("alignMonitorsToOrbit: focusing monitor %q for orbit %q", mon.Name, orbitName)
-		if err := hypr.Dispatch(ctx, "focusmonitor", mon.Name); err != nil {
-			return fmt.Errorf("align monitors: failed to focus monitor %q: %w", mon.Name, err)
-		}
-		if preferredWorkspace != "" && idx == len(ordered)-1 {
-			currentWorkspace := ""
-			if activeWS, err := hypr.ActiveWorkspace(ctx); err == nil && activeWS != nil {
-				currentWorkspace = strings.TrimSpace(activeWS.Name)
-			}
-			if currentWorkspace == preferredWorkspace {
-				d.debugf("alignMonitorsToOrbit: monitor %q already on preferred workspace %q", mon.Name, preferredWorkspace)
-				continue
-			}
-			if err := hypr.SwitchWorkspace(ctx, preferredWorkspace); err != nil {
-				return fmt.Errorf("align monitors: switch to %q: %w", preferredWorkspace, err)
-			}
-			d.state.recordWorkspaceActivation(preferredWorkspace)
-			d.debugf("alignMonitorsToOrbit: monitor %q now on preferred workspace %q", mon.Name, preferredWorkspace)
-			continue
-		}
-		if workspaceName, err := d.jumpToPrimaryModuleWorkspace(ctx); err != nil {
-			return fmt.Errorf("align monitors: %w", err)
-		} else {
-			d.debugf("alignMonitorsToOrbit: monitor %q now on workspace %q", mon.Name, workspaceName)
+		if err := d.alignMonitor(ctx, hypr, mon, idx == len(ordered)-1, preferredWorkspace, orbitName); err != nil {
+			return err
 		}
 	}
 	return nil
 }
+
+func (d *Dispatcher) logMonitorOrder(monitors []hyprctl.Monitor) {
+	names := make([]string, len(monitors))
+	for i, mon := range monitors {
+		names[i] = mon.Name
+	}
+	d.debugf("alignMonitorsToOrbit: monitor focus order=%s", strings.Join(names, " -> "))
+}
+
+func (d *Dispatcher) alignMonitor(ctx context.Context, hypr runtime.HyprctlClient, mon hyprctl.Monitor, isLast bool, preferredWorkspace, orbitName string) error {
+	d.debugf("alignMonitorsToOrbit: focusing monitor %q for orbit %q", mon.Name, orbitName)
+
+	if err := hypr.Dispatch(ctx, "focusmonitor", mon.Name); err != nil {
+		return fmt.Errorf("align monitors: failed to focus monitor %q: %w", mon.Name, err)
+	}
+
+	if preferredWorkspace != "" && isLast {
+		return d.switchToPreferred(ctx, hypr, mon.Name, preferredWorkspace)
+	}
+
+	workspaceName, err := d.jumpToPrimaryModuleWorkspace(ctx)
+	if err != nil {
+		return fmt.Errorf("align monitors: %w", err)
+	}
+	d.debugf("alignMonitorsToOrbit: monitor %q now on workspace %q", mon.Name, workspaceName)
+	return nil
+}
+
+func (d *Dispatcher) switchToPreferred(ctx context.Context, hypr runtime.HyprctlClient, monitorName, preferredWorkspace string) error {
+	activeWS, err := hypr.ActiveWorkspace(ctx)
+	if err == nil && activeWS != nil {
+		if strings.TrimSpace(activeWS.Name) == preferredWorkspace {
+			d.debugf("alignMonitorsToOrbit: monitor %q already on preferred workspace %q", monitorName, preferredWorkspace)
+			return nil
+		}
+	}
+
+	if err := hypr.SwitchWorkspace(ctx, preferredWorkspace); err != nil {
+		return fmt.Errorf("align monitors: switch to %q: %w", preferredWorkspace, err)
+	}
+	d.state.recordWorkspaceActivation(preferredWorkspace)
+	d.debugf("alignMonitorsToOrbit: monitor %q now on preferred workspace %q", monitorName, preferredWorkspace)
+	return nil
+}
+
+// // alignMonitorsToOrbit ensures all monitors (or only the focused one) display a primary module workspace for the given orbit.
+// // When preferredWorkspace is provided, the focused monitor finishes on that workspace instead of the orbit's primary module.
+// func (d *Dispatcher) alignMonitorsToOrbit(ctx context.Context, orbitName string, onlyFocusedMonitor bool, preferredWorkspace string) error {
+// 	if d == nil || d.state == nil {
+// 		return nil
+// 	}
+// 	hypr := d.state.HyprctlClient()
+// 	if hypr == nil {
+// 		return nil
+// 	}
+// 	monitors, err := hypr.Monitors(ctx)
+// 	if err != nil {
+// 		return fmt.Errorf("align monitors: failed to list monitors: %w", err)
+// 	}
+
+// 	monitorSummaries := make([]string, 0, len(monitors))
+// 	for _, mon := range monitors {
+// 		monitorSummaries = append(monitorSummaries, fmt.Sprintf("%s(focused=%v, workspace=%q)", mon.Name, mon.Focused, strings.TrimSpace(mon.ActiveWorkspace.Name)))
+// 	}
+// 	d.debugf("alignMonitorsToOrbit: monitor snapshot (count=%d, focusedOnly=%v): %s", len(monitors), onlyFocusedMonitor, strings.Join(monitorSummaries, ", "))
+
+// 	if len(monitors) == 0 {
+// 		d.debugf("alignMonitorsToOrbit: no monitors reported, skipping alignment")
+// 		return nil
+// 	}
+
+// 	// Find focused monitor, default to first if none
+// 	focusedIdx := slices.IndexFunc(monitors, func(m hyprctl.Monitor) bool { return m.Focused })
+// 	if focusedIdx == -1 {
+// 		focusedIdx = 0
+// 		d.debugf("alignMonitorsToOrbit: no focused monitor, defaulting to %q", monitors[0].Name)
+// 	}
+
+// 	focusedWorkspace := strings.TrimSpace(monitors[focusedIdx].ActiveWorkspace.Name)
+// 	preferredWorkspace = strings.TrimSpace(preferredWorkspace)
+
+// 	if len(monitors) <= 1 || onlyFocusedMonitor {
+// 		d.debugf("alignMonitorsToOrbit: aligning focused monitor only (monitors=%d flag=%v)", len(monitors), onlyFocusedMonitor)
+// 		if preferredWorkspace != "" {
+// 			if focusedWorkspace == preferredWorkspace {
+// 				d.debugf("alignMonitorsToOrbit: focused monitor already on preferred workspace %q", preferredWorkspace)
+// 				return nil
+// 			}
+// 			if err := hypr.SwitchWorkspace(ctx, preferredWorkspace); err != nil {
+// 				return fmt.Errorf("align monitors: switch to %q: %w", preferredWorkspace, err)
+// 			}
+// 			d.state.recordWorkspaceActivation(preferredWorkspace)
+// 			d.debugf("alignMonitorsToOrbit: focused monitor aligned to preferred workspace %q", preferredWorkspace)
+// 			return nil
+// 		}
+// 		if workspaceName, err := d.jumpToPrimaryModuleWorkspace(ctx); err != nil {
+// 			return fmt.Errorf("align monitors: %w", err)
+// 		} else {
+// 			d.debugf("alignMonitorsToOrbit: focused monitor aligned to workspace %q", workspaceName)
+// 		}
+// 		return nil
+// 	}
+
+// 	// Create list of monitors without focused monitor and add it as last entry
+// 	ordered := make([]hyprctl.Monitor, 0, len(monitors))
+// 	for idx, mon := range monitors {
+// 		if idx == focusedIdx {
+// 			continue
+// 		}
+// 		ordered = append(ordered, mon)
+// 	}
+// 	ordered = append(ordered, monitors[focusedIdx])
+// 	orderedNames := make([]string, 0, len(ordered))
+// 	for _, mon := range ordered {
+// 		orderedNames = append(orderedNames, mon.Name)
+// 	}
+// 	d.debugf("alignMonitorsToOrbit: monitor focus order=%s", strings.Join(orderedNames, " -> "))
+// 	for idx, mon := range ordered {
+// 		d.debugf("alignMonitorsToOrbit: focusing monitor %q for orbit %q", mon.Name, orbitName)
+// 		if err := hypr.Dispatch(ctx, "focusmonitor", mon.Name); err != nil {
+// 			return fmt.Errorf("align monitors: failed to focus monitor %q: %w", mon.Name, err)
+// 		}
+// 		if preferredWorkspace != "" && idx == len(ordered)-1 {
+// 			currentWorkspace := ""
+// 			if activeWS, err := hypr.ActiveWorkspace(ctx); err == nil && activeWS != nil {
+// 				currentWorkspace = strings.TrimSpace(activeWS.Name)
+// 			}
+// 			if currentWorkspace == preferredWorkspace {
+// 				d.debugf("alignMonitorsToOrbit: monitor %q already on preferred workspace %q", mon.Name, preferredWorkspace)
+// 				continue
+// 			}
+// 			if err := hypr.SwitchWorkspace(ctx, preferredWorkspace); err != nil {
+// 				return fmt.Errorf("align monitors: switch to %q: %w", preferredWorkspace, err)
+// 			}
+// 			d.state.recordWorkspaceActivation(preferredWorkspace)
+// 			d.debugf("alignMonitorsToOrbit: monitor %q now on preferred workspace %q", mon.Name, preferredWorkspace)
+// 			continue
+// 		}
+// 		if workspaceName, err := d.jumpToPrimaryModuleWorkspace(ctx); err != nil {
+// 			return fmt.Errorf("align monitors: %w", err)
+// 		} else {
+// 			d.debugf("alignMonitorsToOrbit: monitor %q now on workspace %q", mon.Name, workspaceName)
+// 		}
+// 	}
+// 	return nil
+// }
 
 // getActiveOrbitName retrieves the active orbit name, returning empty string on error.
 func (d *Dispatcher) getActiveOrbitName(ctx context.Context, modSvc *module.Service) string {

@@ -158,7 +158,7 @@ func (f *fakeOrbitTracker) Sequence(context.Context) ([]string, error) {
 	return append([]string(nil), f.sequence...), nil
 }
 
-func TestAlignMonitorsToOrbitPreferredWorkspace(t *testing.T) {
+func TestAlignMonitorsToOrbitPreferredWorkspaceNoRedundantSwitch(t *testing.T) {
 	stub := &alignHyprStub{
 		monitors: []hyprctl.Monitor{{
 			Name:    "HDMI-A-1",
@@ -175,8 +175,8 @@ func TestAlignMonitorsToOrbitPreferredWorkspace(t *testing.T) {
 	if err := d.alignMonitorsToOrbit(context.Background(), "beta", true, "code-beta"); err != nil {
 		t.Fatalf("alignMonitorsToOrbit returned error: %v", err)
 	}
-	if len(stub.switchCalls) != 1 || stub.switchCalls[0] != "code-beta" {
-		t.Fatalf("expected switch to code-beta, got %v", stub.switchCalls)
+	if len(stub.switchCalls) != 0 {
+		t.Fatalf("expected no redundant switch, got %v", stub.switchCalls)
 	}
 }
 
