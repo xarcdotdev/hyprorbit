@@ -1,6 +1,9 @@
 package main
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/spf13/cobra"
 
 	"hyprorbit/internal/app/ctl"
@@ -32,7 +35,12 @@ func newWindowMoveCommand() *cobra.Command {
 				return err
 			}
 
-			results, err := client.WindowMove(cmd.Context(), args[0], args[1], silent, global)
+			orbitTarget, moduleTarget, err := parseWindowMoveTarget(args[1])
+			if err != nil {
+				return err
+			}
+
+			results, err := client.WindowMove(cmd.Context(), args[0], orbitTarget, moduleTarget, silent, global)
 			if err != nil {
 				return err
 			}
@@ -64,4 +72,57 @@ func newWindowListCommand() *cobra.Command {
 			return ctl.PrintWindowList(cmd.OutOrStdout(), client.Options(), windows)
 		},
 	}
+}
+
+func parseWindowMoveTarget(raw string) (orbitTarget, moduleTarget string, err error) {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return "", "", fmt.Errorf("window move: target cannot be empty")
+	}
+
+	orbitSpec := ""
+	moduleSpec := value
+	if parts := strings.SplitN(value, "/", 2); len(parts) == 2 {
+		orbitSpec = strings.TrimSpace(parts[0])
+		moduleSpec = strings.TrimSpace(parts[1])
+		if moduleSpec == "" {
+			return "", "", fmt.Errorf("window move: module selector missing")
+		}
+	}
+
+	moduleTarget = ensureModuleTarget(moduleSpec)
+	if moduleTarget == "" {
+		return "", "", fmt.Errorf("window move: module selector missing")
+	}
+
+	if orbitSpec != "" {
+		orbitTarget = ensureOrbitTarget(orbitSpec)
+		if orbitTarget == "" {
+			return "", "", fmt.Errorf("window move: orbit selector missing")
+		}
+	}
+
+	return orbitTarget, moduleTarget, nil
+}
+
+func ensureModuleTarget(spec string) string {
+	trimmed := strings.TrimSpace(spec)
+	if trimmed == "" {
+		return ""
+	}
+	if strings.HasPrefix(strings.ToLower(trimmed), "module:") {
+		return trimmed
+	}
+	return "module:" + trimmed
+}
+
+func ensureOrbitTarget(spec string) string {
+	trimmed := strings.TrimSpace(spec)
+	if trimmed == "" {
+		return ""
+	}
+	if strings.HasPrefix(strings.ToLower(trimmed), "orbit:") {
+		return trimmed
+	}
+	return "orbit:" + trimmed
 }

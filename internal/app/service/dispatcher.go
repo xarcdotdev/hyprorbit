@@ -572,7 +572,7 @@ func (d *Dispatcher) handleModuleCreate(ctx context.Context, modSvc *module.Serv
 		return errorResponse(err.Error(), 1), nil, nil
 	}
 
-	result, err := d.createModuleWorkspace(ctx, modSvc, hypr, "")
+	result, err := d.createModuleWorkspace(ctx, modSvc, hypr, "", "")
 	if err != nil {
 		return errorResponse(err.Error(), 1), nil, nil
 	}
@@ -584,14 +584,17 @@ func (d *Dispatcher) handleModuleCreate(ctx context.Context, modSvc *module.Serv
 // Helper functions
 // *********************************************
 
-// createModuleWorkspace creates a new temporary module workspace for the active orbit.
-func (d *Dispatcher) createModuleWorkspace(ctx context.Context, modSvc *module.Service, hypr runtime.HyprctlClient, origin string) (*module.Result, error) {
-	orbitName := d.getActiveOrbitName(ctx, modSvc)
-	if orbitName == "" {
+// createModuleWorkspace creates a new temporary module workspace for the specified orbit (or active orbit when empty).
+func (d *Dispatcher) createModuleWorkspace(ctx context.Context, modSvc *module.Service, hypr runtime.HyprctlClient, orbitName, origin string) (*module.Result, error) {
+	resolvedOrbit := strings.TrimSpace(orbitName)
+	if resolvedOrbit == "" {
+		resolvedOrbit = d.getActiveOrbitName(ctx, modSvc)
+	}
+	if resolvedOrbit == "" {
 		return nil, fmt.Errorf("active orbit not available")
 	}
 
-	result, err := workspace.CreateTemporary(ctx, hypr, d.state, orbitName, origin)
+	result, err := workspace.CreateTemporary(ctx, hypr, d.state, resolvedOrbit, origin)
 	if err != nil {
 		return nil, err
 	}
@@ -684,12 +687,33 @@ func (d *Dispatcher) handleWindowList(ctx context.Context, req ipc.Request) (ipc
 
 // handleWindowMove relocates one or more windows to a target module workspace.
 func (d *Dispatcher) handleWindowMove(ctx context.Context, req ipc.Request) (ipc.Response, StreamHandler, error) {
-	if len(req.Args) != 2 {
+	if len(req.Args) < 2 {
 		return errorResponse("window move requires a window reference and target", 2), nil, nil
+	}
+	if len(req.Args) > 3 {
+		return errorResponse("window move accepts at most orbit and module targets", 2), nil, nil
 	}
 
 	windowRef := strings.TrimSpace(req.Args[0])
-	targetRef := strings.TrimSpace(req.Args[1])
+
+	var orbitTargetRaw string
+	var moduleTargetRaw string
+	if len(req.Args) == 2 {
+		moduleTargetRaw = req.Args[1]
+	} else {
+		orbitTargetRaw = req.Args[1]
+		moduleTargetRaw = req.Args[2]
+	}
+
+	orbitTarget, err := normalizeOrbitTarget(orbitTargetRaw)
+	if err != nil {
+		return errorResponse(err.Error(), 2), nil, nil
+	}
+
+	moduleTarget, err := normalizeModuleTarget(moduleTargetRaw)
+	if err != nil {
+		return errorResponse(err.Error(), 2), nil, nil
+	}
 
 	silent, err := parseSilentFlag(req.Flags)
 	if err != nil {
@@ -710,20 +734,29 @@ func (d *Dispatcher) handleWindowMove(ctx context.Context, req ipc.Request) (ipc
 	if err != nil {
 		return errorResponse(err.Error(), 1), nil, nil
 	}
+	initialOrbit := d.getActiveOrbitName(ctx, modSvc)
 
 	clients, err := d.resolveWindowsForMove(ctx, hypr, modSvc, windowRef, global)
 	if err != nil {
 		return errorResponse(err.Error(), 1), nil, nil
 	}
-
-	if err := validateMoveTarget(targetRef); err != nil {
-		return errorResponse(err.Error(), 2), nil, nil
-	}
 	// NOTE: When orbit-level move targets (e.g. orbit:NAME) arrive, ensure snapshot refresh keeps window counts aligned.
 
-	results, err := d.moveClientsToTarget(ctx, modSvc, hypr, clients, targetRef, silent)
+	results, err := d.moveClientsToTarget(ctx, modSvc, hypr, clients, orbitTarget, moduleTarget, silent)
 	if err != nil {
 		return errorResponse(err.Error(), 1), nil, nil
+	}
+
+	if !silent && len(results) > 0 {
+		targetOrbit := strings.TrimSpace(results[len(results)-1].Orbit)
+		if targetOrbit != "" && !strings.EqualFold(targetOrbit, strings.TrimSpace(initialOrbit)) {
+			if d.state != nil && d.state.needsOrbitWindowCounts() {
+				d.state.refreshOrbitWindowCounts(ctx)
+			}
+			if err := d.alignMonitorsToOrbit(ctx, targetOrbit, false); err != nil {
+				return errorResponse(err.Error(), 1), nil, nil
+			}
+		}
 	}
 
 	return d.successResponse(formatMoveResults(results))
@@ -746,20 +779,211 @@ func (d *Dispatcher) resolveWindowsForMove(ctx context.Context, hypr runtime.Hyp
 	return clients, nil
 }
 
-// validateMoveTarget checks if the target reference is valid.
-func validateMoveTarget(targetRef string) error {
-	if !strings.HasPrefix(strings.ToLower(targetRef), "module:") {
-		return fmt.Errorf("window move: unsupported target %q", targetRef)
+func normalizeModuleTarget(ref string) (string, error) {
+	trimmed := strings.TrimSpace(ref)
+	if trimmed == "" {
+		return "", fmt.Errorf("window move: module target missing")
 	}
-	return nil
+	lower := strings.ToLower(trimmed)
+	if strings.HasPrefix(lower, "module:") {
+		selector := strings.TrimSpace(trimmed[len("module:"):])
+		if selector == "" {
+			return "", fmt.Errorf("window move: module target missing")
+		}
+		return trimmed, nil
+	}
+	return "module:" + trimmed, nil
+}
+
+func moduleSelectorFromTarget(ref string) (string, error) {
+	trimmed := strings.TrimSpace(ref)
+	if trimmed == "" {
+		return "", fmt.Errorf("window move: module target missing")
+	}
+	lower := strings.ToLower(trimmed)
+	if strings.HasPrefix(lower, "module:") {
+		selector := strings.TrimSpace(trimmed[len("module:"):])
+		if selector == "" {
+			return "", fmt.Errorf("window move: module target missing")
+		}
+		return selector, nil
+	}
+	return trimmed, nil
+}
+
+func normalizeOrbitTarget(ref string) (string, error) {
+	trimmed := strings.TrimSpace(ref)
+	if trimmed == "" {
+		return "", nil
+	}
+	lower := strings.ToLower(trimmed)
+	if strings.HasPrefix(lower, "orbit:") {
+		selector := strings.TrimSpace(trimmed[len("orbit:"):])
+		if selector == "" {
+			return "", fmt.Errorf("window move: orbit target missing")
+		}
+		return trimmed, nil
+	}
+	return "orbit:" + trimmed, nil
+}
+
+func orbitSelectorFromTarget(ref string) (string, error) {
+	trimmed := strings.TrimSpace(ref)
+	if trimmed == "" {
+		return "", fmt.Errorf("window move: orbit target missing")
+	}
+	lower := strings.ToLower(trimmed)
+	if strings.HasPrefix(lower, "orbit:") {
+		selector := strings.TrimSpace(trimmed[len("orbit:"):])
+		if selector == "" {
+			return "", fmt.Errorf("window move: orbit target missing")
+		}
+		return selector, nil
+	}
+	return trimmed, nil
+}
+
+func (d *Dispatcher) resolveOrbitTarget(ctx context.Context, modSvc *module.Service, orbitRef string) (string, error) {
+	trimmed := strings.TrimSpace(orbitRef)
+	if trimmed == "" {
+		orbitName := d.getActiveOrbitName(ctx, modSvc)
+		if orbitName == "" {
+			return "", fmt.Errorf("active orbit not available")
+		}
+		return orbitName, nil
+	}
+
+	selector, err := orbitSelectorFromTarget(trimmed)
+	if err != nil {
+		return "", err
+	}
+
+	orbitSvc, err := d.requireOrbitService()
+	if err != nil {
+		return "", err
+	}
+
+	return d.selectOrbitName(ctx, orbitSvc, selector)
+}
+
+func (d *Dispatcher) selectOrbitName(ctx context.Context, orbitSvc *orbit.Service, spec string) (string, error) {
+	spec = strings.TrimSpace(spec)
+	if spec == "" {
+		return "", fmt.Errorf("window move: orbit target missing")
+	}
+	lower := strings.ToLower(spec)
+	seq, err := orbitSvc.Sequence(ctx)
+	if err != nil {
+		return "", err
+	}
+	if len(seq) == 0 {
+		return "", fmt.Errorf("orbit: no orbits configured")
+	}
+	current, err := orbitSvc.Current(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	switch lower {
+	case "current":
+		return current, nil
+	case "next":
+		sequence := d.effectiveOrbitSequence(seq, current)
+		idx := util.IndexOf(sequence, current)
+		if idx == -1 {
+			sequence = seq
+			idx = util.IndexOf(seq, current)
+		}
+		if idx == -1 {
+			return "", fmt.Errorf("orbit: current orbit %q not found", current)
+		}
+		nextIdx := (idx + 1) % len(sequence)
+		return sequence[nextIdx], nil
+	case "prev":
+		sequence := d.effectiveOrbitSequence(seq, current)
+		idx := util.IndexOf(sequence, current)
+		if idx == -1 {
+			sequence = seq
+			idx = util.IndexOf(seq, current)
+		}
+		if idx == -1 {
+			return "", fmt.Errorf("orbit: current orbit %q not found", current)
+		}
+		prevIdx := idx - 1
+		if prevIdx < 0 {
+			prevIdx = len(sequence) - 1
+		}
+		return sequence[prevIdx], nil
+	}
+
+	if strings.HasPrefix(lower, "index:") {
+		value := strings.TrimSpace(spec[len("index:"):])
+		if value == "" {
+			return "", fmt.Errorf("orbit index requires a value")
+		}
+		idx, err := strconv.Atoi(value)
+		if err != nil {
+			return "", fmt.Errorf("orbit index %q invalid: %w", value, err)
+		}
+		if idx <= 0 {
+			return "", fmt.Errorf("orbit index must be >= 1")
+		}
+		idx--
+		if idx < 0 || idx >= len(seq) {
+			return "", fmt.Errorf("orbit index %d out of range", idx+1)
+		}
+		return seq[idx], nil
+	}
+
+	if strings.HasPrefix(lower, "regex:") {
+		pattern := spec[len("regex:"):]
+		if strings.TrimSpace(pattern) == "" {
+			return "", fmt.Errorf("orbit regex requires a pattern")
+		}
+		re, err := regexp.Compile(pattern)
+		if err != nil {
+			return "", fmt.Errorf("orbit regex %q invalid: %w", pattern, err)
+		}
+		for _, name := range seq {
+			if re.MatchString(name) {
+				return name, nil
+			}
+		}
+		return "", fmt.Errorf("orbit regex %q matched no orbits", pattern)
+	}
+
+	for _, name := range seq {
+		if name == spec {
+			return name, nil
+		}
+	}
+
+	return "", fmt.Errorf("orbit %q not configured", spec)
+}
+
+func (d *Dispatcher) effectiveOrbitSequence(seq []string, current string) []string {
+	cycleMode := config.OrbitCycleModeAll
+	if d != nil && d.state != nil {
+		if cfg := d.state.Config(); cfg != nil {
+			cycleMode = cfg.Orbit.CycleMode
+		}
+	}
+	filtered := d.filteredOrbitSequence(seq, current, cycleMode)
+	if len(filtered) == 0 {
+		return seq
+	}
+	if util.IndexOf(filtered, current) == -1 {
+		return seq
+	}
+	return filtered
 }
 
 // moveClientsToTarget moves all clients to the target, focusing the last one if not silent.
-func (d *Dispatcher) moveClientsToTarget(ctx context.Context, modSvc *module.Service, hypr runtime.HyprctlClient, clients []hyprctl.ClientInfo, targetRef string, follow bool) ([]windowMoveResult, error) {
+func (d *Dispatcher) moveClientsToTarget(ctx context.Context, modSvc *module.Service, hypr runtime.HyprctlClient, clients []hyprctl.ClientInfo, orbitTarget, moduleTarget string, silent bool) ([]windowMoveResult, error) {
 	results := make([]windowMoveResult, 0, len(clients))
 	for idx, client := range clients {
-		follow := !follow && idx == len(clients)-1
-		res, err := d.moveClientToModule(ctx, modSvc, hypr, client, targetRef, follow)
+		follow := !silent && idx == len(clients)-1
+		res, err := d.moveClientToModule(ctx, modSvc, hypr, client, orbitTarget, moduleTarget, follow)
 		if err != nil {
 			return nil, err
 		}
@@ -1247,7 +1471,7 @@ func (d *Dispatcher) jumpToFirstModuleWorkspace(ctx context.Context, modSvc *mod
 }
 
 // moveClientToModule relocates a single window to the specified module target, optionally following focus.
-func (d *Dispatcher) moveClientToModule(ctx context.Context, modSvc *module.Service, hypr runtime.HyprctlClient, client hyprctl.ClientInfo, targetRef string, follow bool) (windowMoveResult, error) {
+func (d *Dispatcher) moveClientToModule(ctx context.Context, modSvc *module.Service, hypr runtime.HyprctlClient, client hyprctl.ClientInfo, orbitTarget, moduleTarget string, follow bool) (windowMoveResult, error) {
 	var result windowMoveResult
 	client = window.SanitizeClient(client)
 	if client.Address == "" {
@@ -1255,7 +1479,7 @@ func (d *Dispatcher) moveClientToModule(ctx context.Context, modSvc *module.Serv
 	}
 	origin := client.Workspace.Name
 	originTemp := d.state.IsTemporaryWorkspace(origin)
-	target, err := d.resolveModuleTarget(ctx, modSvc, hypr, origin, targetRef)
+	target, err := d.resolveModuleTarget(ctx, modSvc, hypr, origin, orbitTarget, moduleTarget)
 	if err != nil {
 		return result, err
 	}
@@ -1284,21 +1508,24 @@ func (d *Dispatcher) moveClientToModule(ctx context.Context, modSvc *module.Serv
 	return result, nil
 }
 
-// resolveModuleTarget parses a module target reference and returns the resolved target workspace details.
-func (d *Dispatcher) resolveModuleTarget(ctx context.Context, modSvc *module.Service, hypr runtime.HyprctlClient, origin, ref string) (moduleTarget, error) {
+// resolveModuleTarget parses orbit/module target references and returns the resolved workspace details.
+func (d *Dispatcher) resolveModuleTarget(ctx context.Context, modSvc *module.Service, hypr runtime.HyprctlClient, origin, orbitRef, moduleRef string) (moduleTarget, error) {
 	var target moduleTarget
-	if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(ref)), "module:") {
-		return target, fmt.Errorf("window move: unsupported module target %q", ref)
-	}
-	spec := strings.TrimSpace(ref[len("module:"):])
-	if spec == "" {
-		return target, fmt.Errorf("window move: module target missing")
+
+	selector, err := moduleSelectorFromTarget(moduleRef)
+	if err != nil {
+		return target, err
 	}
 
 	origin = strings.TrimSpace(origin)
 
-	if strings.EqualFold(spec, "create") {
-		res, err := d.createModuleWorkspace(ctx, modSvc, hypr, origin)
+	orbitName, err := d.resolveOrbitTarget(ctx, modSvc, orbitRef)
+	if err != nil {
+		return target, err
+	}
+
+	if strings.EqualFold(selector, "create") {
+		res, err := d.createModuleWorkspace(ctx, modSvc, hypr, orbitName, origin)
 		if err != nil {
 			return target, err
 		}
@@ -1313,17 +1540,12 @@ func (d *Dispatcher) resolveModuleTarget(ctx context.Context, modSvc *module.Ser
 		return target, nil
 	}
 
-	orbitName := d.getActiveOrbitName(ctx, modSvc)
-	if orbitName == "" {
-		return target, fmt.Errorf("active orbit not available")
-	}
-
 	names := d.allModuleNamesForOrbit(modSvc, orbitName)
 	if len(names) == 0 {
 		return target, fmt.Errorf("no modules configured")
 	}
 	current := d.currentModuleForOrbit(ctx, hypr, orbitName)
-	moduleName, err := d.selectModuleName(names, current, spec)
+	moduleName, err := d.selectModuleName(names, current, selector)
 	if err != nil {
 		return target, err
 	}

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -169,9 +170,19 @@ func (c *Client) OrbitList(ctx context.Context) ([]orbit.Summary, error) {
 }
 
 // WindowMove relocates a window to the requested target.
-func (c *Client) WindowMove(ctx context.Context, windowRef, targetRef string, silent, global bool) ([]WindowMoveResult, error) {
+func (c *Client) WindowMove(ctx context.Context, windowRef, orbitTarget, moduleTarget string, silent, global bool) ([]WindowMoveResult, error) {
 	req := ipc.NewRequest("window", "move")
-	req.Args = []string{windowRef, targetRef}
+	args := []string{strings.TrimSpace(windowRef)}
+	if trimmed := strings.TrimSpace(orbitTarget); trimmed != "" {
+		args = append(args, trimmed)
+	}
+	if trimmed := strings.TrimSpace(moduleTarget); trimmed != "" {
+		args = append(args, trimmed)
+	}
+	if len(args) < 2 {
+		return nil, fmt.Errorf("window move: module target missing")
+	}
+	req.Args = args
 	req.Flags = map[string]any{"silent": silent, "global": global}
 	var raw json.RawMessage
 	if _, err := c.Call(ctx, req, &raw); err != nil {

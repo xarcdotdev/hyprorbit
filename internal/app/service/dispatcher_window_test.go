@@ -195,6 +195,14 @@ func (f *fakeHyprClient) MoveToWorkspace(context.Context, string, string) error 
 	return errors.New("not implemented")
 }
 
+func (f *fakeHyprClient) MoveToWorkspaceFollow(context.Context, string, string) error {
+	return errors.New("not implemented")
+}
+
+func (f *fakeHyprClient) MoveToWorkspaceSilent(context.Context, string, string) error {
+	return errors.New("not implemented")
+}
+
 var _ runtime.HyprctlClient = (*fakeHyprClient)(nil)
 
 type fakeOrbitProvider struct {
