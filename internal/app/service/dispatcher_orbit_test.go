@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"hyprorbit/internal/config"
+	"hyprorbit/internal/hyprctl"
 	"hyprorbit/internal/orbit"
 )
 
@@ -156,3 +157,83 @@ func (f *fakeOrbitTracker) Set(_ context.Context, name string) error {
 func (f *fakeOrbitTracker) Sequence(context.Context) ([]string, error) {
 	return append([]string(nil), f.sequence...), nil
 }
+
+func TestAlignMonitorsToOrbitPreferredWorkspace(t *testing.T) {
+	stub := &alignHyprStub{
+		monitors: []hyprctl.Monitor{{
+			Name:    "HDMI-A-1",
+			Focused: true,
+		}},
+		workspaces: []hyprctl.Workspace{{
+			Name:    "code-beta",
+			Monitor: "HDMI-A-1",
+		}},
+	}
+	state := &DaemonState{hyprctl: stub}
+	d := &Dispatcher{state: state}
+
+	if err := d.alignMonitorsToOrbit(context.Background(), "beta", true, "code-beta"); err != nil {
+		t.Fatalf("alignMonitorsToOrbit returned error: %v", err)
+	}
+	if len(stub.switchCalls) != 1 || stub.switchCalls[0] != "code-beta" {
+		t.Fatalf("expected switch to code-beta, got %v", stub.switchCalls)
+	}
+}
+
+type alignHyprStub struct {
+	monitors     []hyprctl.Monitor
+	workspaces   []hyprctl.Workspace
+	switchCalls  []string
+	focusMonitor []string
+}
+
+func (a *alignHyprStub) Dispatch(_ context.Context, args ...string) error {
+	if len(args) > 0 && args[0] == "focusmonitor" {
+		if len(args) > 1 {
+			a.focusMonitor = append(a.focusMonitor, args[1])
+		}
+	}
+	return nil
+}
+
+func (a *alignHyprStub) Clients(context.Context) ([]byte, error) { return nil, nil }
+
+func (a *alignHyprStub) DecodeClients(context.Context, any) error { return nil }
+
+func (a *alignHyprStub) InvalidateClients() {}
+
+func (a *alignHyprStub) Workspaces(context.Context) ([]hyprctl.Workspace, error) {
+	return append([]hyprctl.Workspace(nil), a.workspaces...), nil
+}
+
+func (a *alignHyprStub) ActiveWorkspace(context.Context) (*hyprctl.Workspace, error) {
+	if len(a.workspaces) == 0 {
+		return &hyprctl.Workspace{}, nil
+	}
+	return &a.workspaces[0], nil
+}
+
+func (a *alignHyprStub) ActiveWindow(context.Context) (*hyprctl.Window, error) { return nil, nil }
+
+func (a *alignHyprStub) Monitors(context.Context) ([]hyprctl.Monitor, error) {
+	return append([]hyprctl.Monitor(nil), a.monitors...), nil
+}
+
+func (a *alignHyprStub) Batch(context.Context, ...[]string) ([]hyprctl.BatchResult, error) {
+	return nil, nil
+}
+
+func (a *alignHyprStub) BatchDispatch(context.Context, ...[]string) ([]hyprctl.BatchResult, error) {
+	return nil, nil
+}
+
+func (a *alignHyprStub) SwitchWorkspace(_ context.Context, workspace string) error {
+	a.switchCalls = append(a.switchCalls, workspace)
+	return nil
+}
+
+func (a *alignHyprStub) FocusWindow(context.Context, string) error { return nil }
+
+func (a *alignHyprStub) MoveToWorkspaceFollow(context.Context, string, string) error { return nil }
+
+func (a *alignHyprStub) MoveToWorkspaceSilent(context.Context, string, string) error { return nil }

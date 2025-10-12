@@ -246,7 +246,7 @@ func (d *Dispatcher) handleOrbit(ctx context.Context, req ipc.Request) (ipc.Resp
 		if err := orbitSvc.Set(ctx, target); err != nil {
 			return errorResponse(err.Error(), 1), nil
 		}
-		if err := d.alignMonitorsToOrbit(ctx, target, false); err != nil {
+		if err := d.alignMonitorsToOrbit(ctx, target, false, ""); err != nil {
 			return errorResponse(err.Error(), 1), nil
 		}
 		d.state.InvalidateClients()
@@ -307,7 +307,7 @@ func (d *Dispatcher) handleOrbitStep(ctx context.Context, orbitSvc *orbit.Servic
 	if err := orbitSvc.Set(ctx, name); err != nil {
 		return errorResponse(err.Error(), 1), nil
 	}
-	if err := d.alignMonitorsToOrbit(ctx, name, false); err != nil {
+	if err := d.alignMonitorsToOrbit(ctx, name, false, ""); err != nil {
 		return errorResponse(err.Error(), 1), nil
 	}
 	d.state.InvalidateClients()
@@ -742,18 +742,35 @@ func (d *Dispatcher) handleWindowMove(ctx context.Context, req ipc.Request) (ipc
 	}
 	// NOTE: When orbit-level move targets (e.g. orbit:NAME) arrive, ensure snapshot refresh keeps window counts aligned.
 
-	results, err := d.moveClientsToTarget(ctx, modSvc, hypr, clients, orbitTarget, moduleTarget, silent)
+	originMonitors := d.monitorsForClients(ctx, hypr, clients)
+	multiMonitorMove := len(originMonitors) > 1
+	allowFollow := !silent && !multiMonitorMove
+	if !allowFollow {
+		d.debugf("handleWindowMove: disabling follow because windows span %d monitors", len(originMonitors))
+	}
+
+	results, err := d.moveClientsToTarget(ctx, modSvc, hypr, clients, orbitTarget, moduleTarget, allowFollow)
 	if err != nil {
 		return errorResponse(err.Error(), 1), nil, nil
 	}
 
-	if !silent && len(results) > 0 {
+	if len(results) > 0 {
+		// The target workspace is the preferred one
+		preferredWorkspace := strings.TrimSpace(results[len(results)-1].Workspace)
 		targetOrbit := strings.TrimSpace(results[len(results)-1].Orbit)
-		if targetOrbit != "" && !strings.EqualFold(targetOrbit, strings.TrimSpace(initialOrbit)) {
+		orbitChanged := targetOrbit != "" && !strings.EqualFold(targetOrbit, strings.TrimSpace(initialOrbit))
+		needsAlignment := (!allowFollow && !silent) || orbitChanged
+		if orbitChanged {
 			if d.state != nil && d.state.needsOrbitWindowCounts() {
 				d.state.refreshOrbitWindowCounts(ctx)
 			}
-			if err := d.alignMonitorsToOrbit(ctx, targetOrbit, false); err != nil {
+		}
+		if needsAlignment {
+			alignOrbit := targetOrbit
+			if alignOrbit == "" {
+				alignOrbit = strings.TrimSpace(initialOrbit)
+			}
+			if err := d.alignMonitorsToOrbit(ctx, alignOrbit, false, preferredWorkspace); err != nil {
 				return errorResponse(err.Error(), 1), nil, nil
 			}
 		}
@@ -979,10 +996,10 @@ func (d *Dispatcher) effectiveOrbitSequence(seq []string, current string) []stri
 }
 
 // moveClientsToTarget moves all clients to the target, focusing the last one if not silent.
-func (d *Dispatcher) moveClientsToTarget(ctx context.Context, modSvc *module.Service, hypr runtime.HyprctlClient, clients []hyprctl.ClientInfo, orbitTarget, moduleTarget string, silent bool) ([]windowMoveResult, error) {
+func (d *Dispatcher) moveClientsToTarget(ctx context.Context, modSvc *module.Service, hypr runtime.HyprctlClient, clients []hyprctl.ClientInfo, orbitTarget, moduleTarget string, allowFollow bool) ([]windowMoveResult, error) {
 	results := make([]windowMoveResult, 0, len(clients))
 	for idx, client := range clients {
-		follow := !silent && idx == len(clients)-1
+		follow := allowFollow && idx == len(clients)-1
 		res, err := d.moveClientToModule(ctx, modSvc, hypr, client, orbitTarget, moduleTarget, follow)
 		if err != nil {
 			return nil, err
@@ -990,6 +1007,36 @@ func (d *Dispatcher) moveClientsToTarget(ctx context.Context, modSvc *module.Ser
 		results = append(results, res)
 	}
 	return results, nil
+}
+
+func (d *Dispatcher) monitorsForClients(ctx context.Context, hypr runtime.HyprctlClient, clients []hyprctl.ClientInfo) map[string]struct{} {
+	monitors := make(map[string]struct{})
+	if hypr == nil || len(clients) == 0 {
+		return monitors
+	}
+	workspaces, err := hypr.Workspaces(ctx)
+	if err != nil {
+		d.debugf("handleWindowMove: list workspaces for monitor detection: %v", err)
+		return monitors
+	}
+	workspaceMonitor := make(map[string]string, len(workspaces))
+	for _, ws := range workspaces {
+		name := strings.TrimSpace(ws.Name)
+		if name == "" {
+			continue
+		}
+		workspaceMonitor[name] = strings.TrimSpace(ws.Monitor)
+	}
+	for _, client := range clients {
+		wsName := strings.TrimSpace(client.Workspace.Name)
+		if wsName == "" {
+			continue
+		}
+		if monitor := strings.TrimSpace(workspaceMonitor[wsName]); monitor != "" {
+			monitors[monitor] = struct{}{}
+		}
+	}
+	return monitors
 }
 
 // formatMoveResults formats the move results as a single object or array.
@@ -1134,7 +1181,7 @@ func (d *Dispatcher) resetWorkspaces(ctx context.Context) error {
 	}
 	d.debugf("resetWorkspaces: primaryWorkspace=%q", primaryWorkspace)
 
-	if err := d.alignMonitorsToOrbit(ctx, orbitName, false); err != nil {
+	if err := d.alignMonitorsToOrbit(ctx, orbitName, false, ""); err != nil {
 		return fmt.Errorf("workspace reset: %w", err)
 	}
 	workspaces, err := hypr.Workspaces(ctx)
@@ -1241,7 +1288,8 @@ func (d *Dispatcher) resetWorkspaces(ctx context.Context) error {
 }
 
 // alignMonitorsToOrbit ensures all monitors (or only the focused one) display a primary module workspace for the given orbit.
-func (d *Dispatcher) alignMonitorsToOrbit(ctx context.Context, orbitName string, onlyFocusedMonitor bool) error {
+// When preferredWorkspace is provided, the focused monitor finishes on that workspace instead of the orbit's primary module.
+func (d *Dispatcher) alignMonitorsToOrbit(ctx context.Context, orbitName string, onlyFocusedMonitor bool, preferredWorkspace string) error {
 	if d == nil || d.state == nil {
 		return nil
 	}
@@ -1265,21 +1313,36 @@ func (d *Dispatcher) alignMonitorsToOrbit(ctx context.Context, orbitName string,
 		return nil
 	}
 
+	// Find focused monitor, default to first if none
+	focusedIdx := slices.IndexFunc(monitors, func(m hyprctl.Monitor) bool { return m.Focused })
+	if focusedIdx == -1 {
+		focusedIdx = 0
+		d.debugf("alignMonitorsToOrbit: no focused monitor, defaulting to %q", monitors[0].Name)
+	}
+
+	focusedWorkspace := strings.TrimSpace(monitors[focusedIdx].ActiveWorkspace.Name)
+	preferredWorkspace = strings.TrimSpace(preferredWorkspace)
+
 	if len(monitors) <= 1 || onlyFocusedMonitor {
 		d.debugf("alignMonitorsToOrbit: aligning focused monitor only (monitors=%d flag=%v)", len(monitors), onlyFocusedMonitor)
+		if preferredWorkspace != "" {
+			if focusedWorkspace == preferredWorkspace {
+				d.debugf("alignMonitorsToOrbit: focused monitor already on preferred workspace %q", preferredWorkspace)
+				return nil
+			}
+			if err := hypr.SwitchWorkspace(ctx, preferredWorkspace); err != nil {
+				return fmt.Errorf("align monitors: switch to %q: %w", preferredWorkspace, err)
+			}
+			d.state.recordWorkspaceActivation(preferredWorkspace)
+			d.debugf("alignMonitorsToOrbit: focused monitor aligned to preferred workspace %q", preferredWorkspace)
+			return nil
+		}
 		if workspaceName, err := d.jumpToPrimaryModuleWorkspace(ctx); err != nil {
 			return fmt.Errorf("align monitors: %w", err)
 		} else {
 			d.debugf("alignMonitorsToOrbit: focused monitor aligned to workspace %q", workspaceName)
 		}
 		return nil
-	}
-
-	// Identify focused monitor
-	focusedIdx := slices.IndexFunc(monitors, func(m hyprctl.Monitor) bool { return m.Focused })
-	if focusedIdx == -1 {
-		focusedIdx = 0
-		d.debugf("alignMonitorsToOrbit: focused monitor not reported, defaulting to index 0 (%q)", monitors[0].Name)
 	}
 
 	// Create list of monitors without focused monitor and add it as last entry
@@ -1296,10 +1359,26 @@ func (d *Dispatcher) alignMonitorsToOrbit(ctx context.Context, orbitName string,
 		orderedNames = append(orderedNames, mon.Name)
 	}
 	d.debugf("alignMonitorsToOrbit: monitor focus order=%s", strings.Join(orderedNames, " -> "))
-	for _, mon := range ordered {
+	for idx, mon := range ordered {
 		d.debugf("alignMonitorsToOrbit: focusing monitor %q for orbit %q", mon.Name, orbitName)
 		if err := hypr.Dispatch(ctx, "focusmonitor", mon.Name); err != nil {
 			return fmt.Errorf("align monitors: failed to focus monitor %q: %w", mon.Name, err)
+		}
+		if preferredWorkspace != "" && idx == len(ordered)-1 {
+			currentWorkspace := ""
+			if activeWS, err := hypr.ActiveWorkspace(ctx); err == nil && activeWS != nil {
+				currentWorkspace = strings.TrimSpace(activeWS.Name)
+			}
+			if currentWorkspace == preferredWorkspace {
+				d.debugf("alignMonitorsToOrbit: monitor %q already on preferred workspace %q", mon.Name, preferredWorkspace)
+				continue
+			}
+			if err := hypr.SwitchWorkspace(ctx, preferredWorkspace); err != nil {
+				return fmt.Errorf("align monitors: switch to %q: %w", preferredWorkspace, err)
+			}
+			d.state.recordWorkspaceActivation(preferredWorkspace)
+			d.debugf("alignMonitorsToOrbit: monitor %q now on preferred workspace %q", mon.Name, preferredWorkspace)
+			continue
 		}
 		if workspaceName, err := d.jumpToPrimaryModuleWorkspace(ctx); err != nil {
 			return fmt.Errorf("align monitors: %w", err)
