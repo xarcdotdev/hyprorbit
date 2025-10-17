@@ -65,7 +65,6 @@ func NewLogger(component string, cfg *config.DebugConfig) (*log.Logger, error) {
 	// Return the underlying logger wrapped in our ComponentLogger
 	// But we need to return *log.Logger, so we'll use a different approach
 	logger := log.New(&componentWriter{component: component, logger: baseLogger}, "", 0)
-	logger.Printf("Debug logging initialized for %s", component)
 	return logger, nil
 }
 
