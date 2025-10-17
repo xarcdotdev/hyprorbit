@@ -25,6 +25,8 @@ const (
 	ansiReset            = "\033[0m"
 	spinnerFrames        = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 	waybarConfigFileName = "waybar.yaml"
+	daemonStartupTimeout = 5 * time.Second
+	daemonRetryInterval  = 500 * time.Millisecond
 )
 
 func newInitCommand() *cobra.Command {
@@ -171,13 +173,24 @@ func ensureDaemonRunning(ctx context.Context, client *ctl.Client) error {
 	if client == nil {
 		return fmt.Errorf("init: daemon client unavailable")
 	}
-	if err := client.DaemonStatus(ctx); err != nil {
-		if isConnectionError(err) {
+	deadline := time.Now().Add(daemonStartupTimeout)
+	for {
+		err := client.DaemonStatus(ctx)
+		if err == nil {
+			return nil
+		}
+		if !isConnectionError(err) {
+			return fmt.Errorf("daemon health check failed: %w", err)
+		}
+		if time.Now().After(deadline) {
 			return fmt.Errorf("hyprorbit daemon is not running. Start it (e.g. `hyprorbitd`) and rerun this command")
 		}
-		return fmt.Errorf("daemon health check failed: %w", err)
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("hyprorbit daemon is not running: %w", ctx.Err())
+		case <-time.After(daemonRetryInterval):
+		}
 	}
-	return nil
 }
 
 func isConnectionError(err error) bool {
