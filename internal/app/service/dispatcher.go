@@ -132,10 +132,8 @@ func (d *Dispatcher) requireHyprctlClient() (runtime.HyprctlClient, error) {
 // successResponse creates a successful response, optionally assigns data, and publishes a snapshot.
 func (d *Dispatcher) successResponse(data any) (ipc.Response, StreamHandler, error) {
 	resp := ipc.NewResponse(false)
-	if data != nil {
-		if err := ipc.AssignData(&resp, data); err != nil {
-			return errorResponse(err.Error(), 1), nil, nil
-		}
+	if err := ipc.AssignData(&resp, data); err != nil {
+		return errorResponse(err.Error(), 1), nil, nil
 	}
 	d.publishSnapshot()
 	return resp, nil, nil

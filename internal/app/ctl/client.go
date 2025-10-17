@@ -104,7 +104,7 @@ func (c *Client) Call(ctx context.Context, req ipc.Request, target any) (*ipc.Re
 	if !resp.Success {
 		msg := resp.Error
 		if msg == "" {
-			msg = "daemon returned an error"
+			msg = "daemon call returned an error"
 		}
 		return &resp, &Error{Message: msg, Code: resp.ExitCode}
 	}
