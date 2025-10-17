@@ -1,11 +1,10 @@
-<a id="readme-top"></a>
-
 <!-- PROJECT LOGO -->
 <div align="center">
-    <img src="docs/images/logo.webp" alt="Logo" width="150" height="150">
-    <!-- <h1>**Ø**</h1> -->
+    <img src="docs/images/logo_text.png" alt="Logo" width="350">
+<h2 align="center">hyprorbit v0.1.1</h2>
 
-<h2 align="center">hyprørbit v0.1</h2>
+<!-- DISCLAIMER -->
+⚠️ **This is experimental!** ⚠️ 
 
   <p align="center">
 Lightweight workspace orchestration for <a href="https://github.com/hyprwm/Hyprland">Hyprland</a> Power-Users.
@@ -28,41 +27,23 @@ Lightweight workspace orchestration for <a href="https://github.com/hyprwm/Hyprl
 
 </div>
 
-<!-- DISCLAIMER -->
-## Disclaimer
-
-⚠️ **This is experimental!** ⚠️ 
-
-
-**Current limitations:**
-
-- Window rules: Auto-assigning apps to workspaces via Hyprland windowrules are not orbit-aware 
--> hyprorbit uses `module focus`.
-
-- Waybar Integration: Default Hyprland workspace indicator for waybar works, but is not orbit-aware. 
--> <a href="docs/waybar_configuration.md">You can create a custom module</a>)  
-
-
-<!-- ABOUT THE PROJECT -->
 ## What is hyprorbit?
 
-**The Problem**: You've organized your Hyprland workspaces: SUPER+1 for coding, SUPER+2 for communication, etc. But what happens when you need to switch contexts? Work on a different project? Take a break? You either clutter your organized workspace or lose your setup/workspace-hotkeys. Without having designated workspaces for applications I often tend to only work on a small portion of my screen or have to search for applications scattered across workspaces & manually reorganizing.
+Switching projects in Hyprland often breaks your layout - windows scatter, and workspace hotkeys change meaning. **hyprorbit** introduces **orbits** - mirrored workspace sets with identical keybindings. Switch between **work**, **personal**, or **debug** modes instantly while keeping muscle memory intact.
 
-**The Solution**: hyprorbit gives you multiple "orbits" (contexts) with identical workspace layouts. Switch between a work orbit, personal orbit, or emergency-fix orbit while keeping your muscle memory intact.
+**Core idea:**
+- Each app → fixed workspace  
+- Each workspace → consistent hotkey  
+- Some apps are **global**, others need an instance **per-context** 
 
-- Clean workspace separation by project/mood
-- Same keybindings across all contexts
-- Instant context switching & smaller number of relevant workspaces
-
-➡️ Use `hyprorbit module jump code` to instantly switch to your code workspace.
-
-➡️ Use `hyprorbit orbit next` to cycle through your configured workspace-sets.
-
-➡️ Use `hyprorbit module focus code` to focus/move/launch your coding applications.
-
+```bash
+hyprorbit module jump code   # jump to your code workspace  
+hyprorbit module focus comm  # focus or launch your comm app  
+hyprorbit orbit next         # switch orbit instantly  
+```
 
 <!-- <div align="center">
-![Product Demo][product-screenshot]
+![Demo][cli-screenshot]
 </div> -->
 
 ### Key Features
@@ -71,8 +52,6 @@ Lightweight workspace orchestration for <a href="https://github.com/hyprwm/Hyprl
 - **Stable hotkeys** - same workspace-keybindings across all orbits
 - **Focus-or-launch** - focus windows in current orbit instead of launching
 - **Sub-5ms response times** via persistent daemon
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## Quickstart
 
@@ -89,7 +68,7 @@ git clone https://github.com/xarcdotdev/hyprorbit.git
 cd hyprorbit
 make
 
-# Install to PATH (recommended for Hyprland exec-once)
+# Install to PATH (recommended)
 sudo cp hyprorbit hyprorbitd /usr/local/bin/
 ```
 
@@ -111,6 +90,8 @@ exec-once = hyprorbit init --autostart # for workspace initialization
 
 Add to your `~/.config/hypr/hyprland.conf`:
 
+→ [Example Hyprland Keybindings](docs/example_keybindings.conf)
+
 ```bash
 # Quick workspace jumping (stable across orbits)
 bind = SUPER, 1, exec, hyprorbit module jump code
@@ -125,20 +106,13 @@ bind = SUPER ALT, 2, exec, hyprorbit orbit set beta
 
 # Focus Applications
 bind = SUPER, C, exec, hyprorbit module focus coding
-bind = SUPER, G, exec, hyprorbit module focus email
-```
+bind = SUPER, E, exec, hyprorbit module focus email
 
-### 5. Basic Usage
+# Create temporary workspace inside of orbit & move focused window there
+bind = SUPER, N, exec, hyprorbit window move current module:create
 
-```sh
-# Check current orbit
-hyprorbit orbit get
-
-# Switch to beta orbit
-hyprorbit orbit set beta
-
-# Focus or launch email
-hyprorbit module focus email --match "class=.*thunderbird"
+# Move all windows on current workspace to specific module in another orbit
+bind = SUPER ALT, 1, exec hyporbit window move workspace orbit:alpha/module:code
 ```
 
 See `hyprorbit --help` for full options.
@@ -161,6 +135,8 @@ See `hyprorbit --help` for full options.
 
 ### Commands
 
+→ [Full Command Reference](docs/COMMANDS.md)
+
 | Command            | Description                                     |
 | ------------------ | ----------------------------------------------- |
 | `hyprorbit orbit get`    | Show current active orbit                      |
@@ -169,163 +145,6 @@ See `hyprorbit --help` for full options.
 | `hyprorbit module focus <name>` | Smart focus-or-launch for module        |
 | `hyprorbit module jump <name>` | Simple workspace switching               |
 | `hyprorbit window move <window> <target>` | Move/focus windows across modules and orbits |
-
-### Orbit Commands
-
-**Get current orbit:**
-```sh
-hyprorbit orbit get
-# Output: alpha	α	#BC83F9
-```
-
-**Switch orbits:**
-```sh
-# Specific orbit
-hyprorbit orbit set beta
-
-# Cycle through orbits
-hyprorbit orbit next
-hyprorbit orbit prev
-```
-
-### Module Commands
-
-**Jump to workspace:**
-```sh
-# Simple workspace switch in current orbit
-hyprorbit module jump code
-```
-
-**Focus or launch:**
-```sh
-# Focus existing window, move if needed, or spawn new
-hyprorbit module focus email
-
-# With custom matcher (field:regex; legacy field=regex still works)
-hyprorbit module focus email --match "title:Thunderbird"
-
-# With spawn command override
-hyprorbit module focus email --cmd "thunderbird"
-
-# Prevent window moving
-hyprorbit module focus email --no-move
-
-# Search for matching clients across all orbits (for single-instance apps)
-hyprorbit module focus email --global
-```
-
-**Module Focus Mechanism**
-
-Instead of Hyprland's windowrules, hyprorbit uses `module focus <name>` to assign windows to workspaces. You define each module in `config.yaml` with a matcher pattern and fallback launch command.
-
-**How it works::**
-1. Switch to module workspace in current orbit (`comm-alpha`)
-2. Search for matching windows (`class:^signal$|^telegram$`)
-3. Then:
-   - **Focus** if match exists in workspace
-   - **Move** if match exists elsewhere in orbit
-   - **Move from global** (with `--global`) if match exists in any other orbit
-   - **Spawn** fallback command if no match found
-
-Result: One window per module/orbit, automatically placed. You can still manually open applications elsewhere when needed.
-
-**Overrides:** `--match`, `--cmd`, `--float`, `--no-move`, `--global`
-
-**Note:** Use `--global` for single-instance applications that don't allow multiple instances running simultaneously. This searches for the application across all orbits and brings it to the current one.
-
-**Advanced:** A window can belong to multiple modules. Your email client could live in both `comm` and `outreach`, accessible from either module's workspace.
-
-
-### Window Commands
-
-**Move current window to another module:**
-```sh
-# Move focused window to next module workspace and focus it
-hyprorbit window move current module:next
-
-# Move silently (do not change focus)
-hyprorbit window move current module:comm --silent
-
-# Create a temporary workspace in the active orbit and move window there
-hyprorbit window move current module:create
-
-# Move every window on the active workspace
-hyprorbit window move workspace module:next
-
-# Move matching windows (by class) on the active workspace
-hyprorbit window move class:"^firefox$" module:comm
-
-# Move all windows from all orbits (global search)
-hyprorbit window move all module:code --global 
-
-# Move matching windows from all orbits
-hyprorbit window move class:"^firefox$" module:comm --global 
-
-# Move focused window to the code module in the beta orbit
-hyprorbit window move current code/beta
-
-# Explicit orbit target syntax
-hyprorbit window move current module:code/orbit:beta
-```
-
-**Supported targets:**
-- `module:<name>` – explicit module name (e.g., `module:code`)
-- `module:next` / `module:prev` – cycle through configured modules
-- `module:index:<n>` – zero-free index (1-based) into the module list
-- `module:regex:<pattern>` – first module matching the given regex
-- `module:create` – spawn a temporary workspace (`<n>-<orbit>`) before moving
-- `module:<name>/orbit:<orbit>` – move directly into a module on a specific orbit; shorthand `<module>/<orbit>` also works
-
-**Flags:**
-- `--silent` – keep focus on the current workspace after moving (default: false)
-- `--global` – search for windows across all orbits instead of current orbit only (default: false)
-
-**Window selectors:**
-- `current` – focused window (default)
-- `workspace` – every window currently on the active workspace
-- `all` – every window across all workspaces (excludes special workspaces)
-
-- `orbit:<selector>` – look across the entire active orbit (e.g. `orbit:class:foot`)
-- `global:<selector>` – look across every workspace (e.g. `global:title:"Media"`)
-
-- `class:<pattern>` – regex applied to the window class (e.g. `class:"(?i)firefox"`)
-- `title:<pattern>` – regex applied to the window title
-- `initialClass:<pattern>` / `initialTitle:<pattern>` – regex applied to the initial values Hyprland recorded
-- `tag:<pattern>` – regex applied to Hyprland window tags (opt-in)
-- `regex:<pattern>` – applies regex to all fields (class/title/initial)
-
-By default, selectors search within the active workspace. Use the `--global` flag or prefix selectors with `orbit:` or `global:` to expand the search scope.
-
-### Output Formats
-
-**Human-readable (default):**
-```sh
-$ hyprorbit orbit get
-alpha	α	#BC83F9
-
-$ hyprorbit module focus code
-focused	code-alpha	alpha
-```
-
-**JSON mode:**
-```sh
-$ hyprorbit orbit get --json
-{"name":"alpha","label":"α","color":"#BC83F9"}
-
-$ hyprorbit module focus code --json
-{"action":"focused","workspace":"code-alpha","orbit":"alpha"}
-
-$ hyprorbit module watch --waybar
-{"alt":"comm-alpha","class":["comm","alpha"],"text":"comm","tooltip":"α"}
-```
-
-**Quiet mode:**
-```sh
-$ hyprorbit orbit get --quiet
-# Minimal output, errors to stderr
-```
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## Configuration
 
@@ -336,132 +155,39 @@ $ hyprorbit orbit get --quiet
 
 ### Configuration Schema
 
-```yaml
-orbits:
-  - name: "alpha"       # Required: alphanumeric identifier
-    label: "α"          # Optional: display text
-    color: "#BC83F9"  # Optional: isnt used yet
-  - name: "beta"
-    label: "β"
-  - name: "gamma"
-    label: "γ"
+→ [Config Schema](docs/CONFIG.md)
 
-modules:
-  code:
-    focus:
-      logic: try-all                     # Evaluate each rule in order
-      rules:
-        - match: "class=.*code"          # Primary window matcher -> no match -> spawn
-          cmd: ["ghostty", "+new-window"]
-        - match: "class=.*kitty"         # Secondary matcher without spawn
-  comm:
-    focus:
-      rules:
-        - match: "title=.*Slack"
-          cmd: ["flatpak", "run", "com.slack.Slack"]
-  gfx:
-    focus:
-      rules:
-        - match: "class=.*GIMP"
-          cmd: ["gimp"]
+## Waybar
 
-defaults:
-  float: false          # Default floating behavior
-  move: true           # Default move behavior
-```
-
-- `logic` defaults to `first-match-wins`; set `try-all` to chain through every rule even after an earlier action succeeds.
-- `rules` is an ordered list of matcher/command pairs. Rules without a `cmd` simply attempt to focus or move matching windows.
-
-### Window Matching
-
-**Supported fields:**
-- `class`: Window class name
-- `title`: Window title
-- `initialClass`: Class at window creation
-- `initialTitle`: Title at window creation
-
-**Match format:** `field:regex` (legacy `field=regex` remains supported)
-
-```sh
-# Match by class
-hyprorbit module focus code --match "class:^.*Code$"
-
-# Match by title
-hyprorbit module focus browser --match "title:.*Firefox"
-```
-
-### Daemon Configuration
-
-**Socket location:**
-- Primary: `$XDG_RUNTIME_DIR/hyprorbit.sock`
-- Fallback: `/tmp/hyprorbit-$UID.sock`
-
-**Logging:**
-```sh
-# Start with debug logging
-hyprorbitd --log-level debug
-
-# JSON format logging
-hyprorbitd --log-format json
-```
-
-**Manual config reload:**
-```sh
-# Send HUP signal to reload config
-kill -HUP $(pgrep hyprorbitd)
-```
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
-## Advanced Usage
-
-### Status Bar Integration
-
-For a more performant and configurable waybar integration check out docs/WAYBAR.md
+→ [Waybar Setup](docs/WAYBAR.md)
 
 **Waybar example:**
-```json
-{
-  "custom/hyprorbit": {
-    "exec": "hyprorbit orbit get",
-    "interval": 1,
-    "format": "🌌 {}"
-  }
+
+`~/.config/waybar/config.jsonc`
+
+```jsonc
+"custom/hyprorbit#orbit": {
+  "format": "{text}-{alt}",
+  "return-type": "json",
+  "exec": "hyprorbit module watch --waybar --waybar-config ~/.config/hyprorbit/waybar.yaml",
+  "restart-interval": 0,
+  "escape": true,
+  "max-length": 20,
+  "on-click": "hyprorbit orbit next",
+  "on-click-right": "hyprorbit orbit prev",
+  "tooltip": true
 }
 ```
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
+`~/.config/hyprorbit/waybar.yaml`
 
-## Troubleshooting
-
-### Common Issues
-
-**Daemon not starting:**
-```sh
-# Check if already running
-pgrep hyprorbitd
-
-# Check logs
-hyprorbitd --log-level debug
-```
-
-**Socket connection failed:**
-```sh
-# Check socket permissions
-ls -la $XDG_RUNTIME_DIR/hyprorbit.sock
-
-# Use custom socket path
-hyprorbit --socket /tmp/my-orbits.sock orbit get
-```
-
-**Window matching not working:**
-```sh
-# Debug window properties
-hyprctl clients -j | grep -A 10 -B 10 "YourApp"
-
-# Test matchers
-hyprorbit module focus code --match "class:.*" --no-move
+```yaml
+module_watch:
+  text: ["module", "workspace"]
+  tooltip: ["orbit_label", "workspace"]
+  alt: ["workspace"]
+  class:
+    sources: ["module", "orbit"]
 ```
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
@@ -477,21 +203,20 @@ hyprorbit module focus code --match "class:.*" --no-move
 - ✅ Waybar/status support
 - ✅ Multi Monitor Support
 - ✅ Client-server architecture (IPC)
-- ✅ Native Hyprland socket integration
 - ✅ Module seeding (populate workspace with multiple apps)
 - ✅ Support for Hyprland tag for adressing windows
 - ✅ Global window targeting with `--global` flag for cross-orbit window operations
 
 ### Planned Features
+- [ ] Docs: Add sane keybinding setup example
 - [ ] Make Orbit-Alignment across monitors optional (Have independent orbits on each monitor)
+- [ ] Add config for assigning workspaces to monitors
 - [ ] Add window destroy command for orbit/workspace based cleanup
 - [ ] Configurable notifications  
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
 ## Contributing
 
-Issues and PRs welcome! Please check existing issues before creating new ones.
+Issues and PRs welcome!
 
 ### Development
 ```sh
@@ -506,18 +231,10 @@ make
 make test
 ```
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
 ## License
 
 This project is licensed under the MIT License.
 See `LICENSE` for details.
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
-## Contact
-
-Project Link: [https://github.com/xarcdotdev/hyprorbit](https://github.com/xarcdotdev/hyprorbit)
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
