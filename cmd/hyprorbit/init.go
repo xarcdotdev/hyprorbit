@@ -338,7 +338,6 @@ modules:
     focus:
       logic: try-all
       rules:
-      	# You can use multiple matcher and cmd directives per module
         # - match: "class:(ghostty|Alacritty|kitty)$"
         #   cmd: ["ghostty", "+new-window"]
         - match: "class:^code$"
@@ -358,7 +357,7 @@ modules:
   note:
     focus:
       rules:
-        - match: "class:^(obisidan)$"
+        - match: "class:^obsidian$"
         - cmd: ['obsidian']
 
 defaults:
