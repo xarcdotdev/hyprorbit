@@ -29,7 +29,7 @@ Lightweight workspace orchestration for <a href="https://github.com/hyprwm/Hyprl
 
 ## What is hyprorbit?
 
-Switching projects in Hyprland often breaks your layout - windows scatter, and workspace hotkeys change meaning. **hyprorbit** introduces **orbits** - mirrored workspace sets with identical keybindings. Switch between **work**, **personal**, or **debug** modes instantly while keeping muscle memory intact.
+Switching projects in Hyprland can break your layout - windows scatter and workspace hotkeys change meaning. **hyprorbit** introduces **orbits** - mirrored workspace sets with identical keybindings. Switch between **work**, **personal**, or **debug** modes instantly while keeping muscle memory intact.
 
 **Core idea:**
 - Each app → fixed workspace  
@@ -39,7 +39,7 @@ Switching projects in Hyprland often breaks your layout - windows scatter, and w
 ```bash
 hyprorbit module jump code   # jump to your code workspace  
 hyprorbit module focus comm  # focus or launch your comm app  
-hyprorbit orbit next         # switch orbit instantly  
+hyprorbit orbit next         # switch orbit 
 ```
 
 <!-- <div align="center">
@@ -51,7 +51,7 @@ hyprorbit orbit next         # switch orbit instantly
 - **Orbit contexts** - separate sets of workspaces for different projects
 - **Stable hotkeys** - same workspace-keybindings across all orbits
 - **Focus-or-launch** - focus windows in current orbit instead of launching
-- **Sub-5ms response times** via persistent daemon
+- **Very low latency** via persistent daemon
 
 ## Quickstart
 
