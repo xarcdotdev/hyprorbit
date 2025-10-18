@@ -328,56 +328,56 @@ orbits:
   - name: "iota"
     label: "ι"
     color: "#e7e7e7ff"
-
+    
 # Module definitions with focus rules
 modules:
+  # Empty workspace you can remove/rename/keep
+  flex:
+    
   code:
     focus:
-      - match: "class:^code$"
-        cmd: ["code"]
-    seed:
-      - match: "class:^code$"
-        cmd: ["code"]
-      - match: "class:^(ghostty|Alacritty|kitty)$"
-        cmd: ["ghostty"]
-  gfx:
-    focus:
-      - match: "class:^(Firefox|zen)$"
-        cmd: ["zen-browser"]
-    seed:
-      - match: "class:^(Firefox|zen)$"
-        cmd: ["zen-browser"]
-      - match: "class:^Gimp$"
-        cmd: ["gimp"]
-  comm:
-    focus:
-      - match: "class:^thunderbird$"
-        cmd: ["thunderbird"]
-    seed:
-      - match: "class:^thunderbird$"
-        cmd: ["thunderbird"]
-  media:
-    focus:
-      - match: "class:^(mpv)$"
-        cmd: ["mpv"]
+      logic: try-all
+      rules:
+      	# You can use multiple matcher and cmd directives per module
+        # - match: "class:(ghostty|Alacritty|kitty)$"
+        #   cmd: ["ghostty", "+new-window"]
+        - match: "class:^code$"
+          cmd: ["code"]
+
   surf:
     focus:
-      - match: "class:^zen"
-        cmd: ["zen-browser"]
+      rules:
+        - match: "class:^zen"
+          cmd: ["zen-browser"]
+          
+  comm:
+    focus:
+      rules:
+        - match: "class:^thunderbird$"
+          cmd: ["thunderbird"]
+  note:
+    focus:
+      rules:
+        - match: "class:^(obisidan)$"
+        - cmd: ['obsidian']
 
 defaults:
   float: false
   move: true
 
 orbit:
-  switch_preference: last-active-first
+  switch_preference: same-module-first
+  # last-active-first might break on multimonitor setup
+  # switch_preference: last-active-first
 
+  # Skips empty orbits when cycling through them in case current orbit is empty
+  orbit_cycle_mode: not-empty
 # Debug logging configuration
 debug:
   enabled: false                       # Enable debug logging
   log_file: "/tmp/hyprorbit-debug.log" # Optional: defaults to /tmp/hyprorbit-debug.log
-  dispatcher: false                    # Enable dispatcher-specific debug logs
-  hyprctl: false                       # Enable hyprctl-specific debug logs
+  dispatcher: true                     # Enable logging of hyprorbit dispatcher
+  hyprctl: true                        # Enable logging of hyprctl dispatcher
 `
 
 const defaultWaybarConfigYAML = `module_watch:

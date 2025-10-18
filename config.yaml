@@ -27,6 +27,8 @@ orbits:
 
 # Module definitions with focus rules
 modules:
+  flex:
+    
   code:
     focus:
       logic: try-all
@@ -39,11 +41,13 @@ modules:
           cmd: ["ghostty", "new-window"]
         - match: "title:Hyprland Wiki"
           options: [move, float]
-  gfx:
+
+  surf:
     focus:
       rules:
         - match: "class:^(Firefox|zen)$"
-          cmd: ["zen-browser"]
+          cmd: ["firefox"]
+  
   comm:
     focus:
       rules:
@@ -54,11 +58,6 @@ modules:
       rules:
         - match: "class:^(mpv)$"
           cmd: ["mpv"]
-  surf:
-    focus:
-      rules:
-        - match: "class:^zen"
-          cmd: ["zen-browser"]
 
 defaults:
   float: false
@@ -66,7 +65,7 @@ defaults:
 
 orbit:
   switch_preference: last-active-first
-  # orbit_cycle_mode: not-empty  # Optional: cycle populated orbits plus one empty fallback (default: all)
+  orbit_cycle_mode: not-empty  # Optional: cycle populated orbits plus one empty fallback (default)
 
 # Debug logging configuration
 debug:

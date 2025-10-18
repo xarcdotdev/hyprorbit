@@ -14,6 +14,8 @@ Lightweight workspace orchestration for <a href="https://github.com/hyprwm/Hyprl
 
 <br>
 
+<a href="https://coff.ee/xarcdev">Donate</a>
+&middot;
 <a href="https://github.com/xarcdotdev/hyprorbit/issues/new?labels=bug&template=bug-report---.md">Report Bug</a>
 &middot;
 <a href="https://github.com/xarcdotdev/hyprorbit/issues/new?labels=enhancement&template=feature-request---.md">Request Feature</a>
@@ -211,7 +213,8 @@ module_watch:
 - ✅ Global window targeting with `--global` flag for cross-orbit window operations
 
 ### Planned Features
-- [ ] Add config for assigning workspaces/modules to monitors
+- [ ] Add sane defaults for generated config (multiple browsers, email clients IDEs etc.)
+- [ ] Add config parameter for assigning workspaces/modules to monitors
 - [ ] Make Orbit-Alignment across monitors optional (Have independent orbits on each monitor)
 - [ ] Add window destroy command for orbit/workspace based cleanup
 - [ ] Configurable notifications  
@@ -249,8 +252,8 @@ See `LICENSE` for details.
 [stars-url]: https://github.com/xarcdotdev/hyprorbit/stargazers
 [issues-shield]: https://img.shields.io/github/issues/xarcdotdev/hyprorbit.svg?style=for-the-badge
 [issues-url]: https://github.com/xarcdotdev/hyprorbit/issues
-[license-shield]: https://img.shields.io/github/license/xarcdotdev/hyprorbit.svg?style=for-the-badge
-[license-url]: https://github.com/xarcdotdev/hyprorbit/blob/master/LICENSE
+[license-shield]: https://img.shields.io/github/license/xarcdotdev/hyprorbits.svg?style=for-the-badge
+[license-url]: https://github.com/xarcdotdev/hyprorbit/blob/main/LICENSE
 [product-screenshot]: docs/images/demo.gif
 
 [Go.dev]: https://go.dev/
