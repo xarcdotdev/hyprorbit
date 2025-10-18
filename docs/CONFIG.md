@@ -58,11 +58,12 @@ modules:
         - match: "class:^thunderbird$"
           cmd: ["thunderbird"]
 
-  media:
+
+  note:
     focus:
       rules:
-        - match: "class:^(mpv)$"
-          cmd: ["mpv"]
+        - match: "class:^obsidian$"
+          cmd: ["obsidian"]
 
 defaults:
   float: false

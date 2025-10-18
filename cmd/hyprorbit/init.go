@@ -348,17 +348,18 @@ modules:
       rules:
         - match: "class:^zen"
           cmd: ["zen-browser"]
-          
+
   comm:
     focus:
       rules:
         - match: "class:^thunderbird$"
           cmd: ["thunderbird"]
+
   note:
     focus:
       rules:
         - match: "class:^obsidian$"
-        - cmd: ['obsidian']
+          cmd: ["obsidian"]
 
 defaults:
   float: false
