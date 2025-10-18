@@ -17,19 +17,20 @@ orbits:
     color: "#85E89D"
   - name: "delta"
     label: "δ"
-    color: "#FFAB70"
+    color: "#f55050ff"
   - name: "epsilon"
     label: "ε"
     color: "#FFAB70"
   - name: "zeta"
     label: "ζ"
-    color: "#FFAB70"
+    color: "#f5de2aff"
   - name: "theta"
     label: "η"
-    color: "#FFAB70"
+    color: "#70bcffff"
   - name: "iota"
     label: "ι"
-    color: "#FFAB70"
+    color: "#e7e7e7ff"
+
 
 # Module definitions with focus rules
 modules:
@@ -40,12 +41,10 @@ modules:
       # try all matchers before focusing/executing 
       logic: try-all
       rules:
-        - match: "class:^(code)$"
+        - match: "class:(ghostty|Alacritty|kitty)$"
+          cmd: ["ghostty", "+new-window"]
+        - match: "class:^code$"
           cmd: ["code"]
-        - match: "class:^(ghostty|Alacritty|kitty)$"
-          cmd: ["ghostty", "new-window"]
-        - match: "title:Hyprland Wiki"
-          options: [move, float]
 
   surf:
     focus:
@@ -71,7 +70,8 @@ defaults:
 
 orbit:
   switch_preference: last-active-first
-  orbit_cycle_mode: not-empty  # Optional: cycle populated orbits plus one empty fallback (default)
+  # Skips empty orbits when cycling through them in case current orbit is empty (default) otherwise set to all
+  orbit_cycle_mode: not-empty
 
 # Debug logging configuration
 debug:

@@ -369,14 +369,14 @@ orbit:
   # last-active-first might break on multimonitor setup
   # switch_preference: last-active-first
 
-  # Skips empty orbits when cycling through them in case current orbit is empty
+  # Skips empty orbits when cycling through them in case current orbit is empty (default) otherwise set to all
   orbit_cycle_mode: not-empty
 # Debug logging configuration
 debug:
-  enabled: false                       # Enable debug logging
-  log_file: "/tmp/hyprorbit-debug.log" # Optional: defaults to /tmp/hyprorbit-debug.log
-  dispatcher: true                     # Enable logging of hyprorbit dispatcher
-  hyprctl: true                        # Enable logging of hyprctl dispatcher
+  enabled: false                        # Enable debug logging
+  log_file: "/tmp/hyprorbit-debug.log"  # Optional: defaults to /tmp/hyprorbit-debug.log
+  dispatcher: false                     # Enable logging of hyprorbit dispatcher
+  hyprctl: false                        # Enable logging of hyprctl dispatcher
 `
 
 const defaultWaybarConfigYAML = `module_watch:
