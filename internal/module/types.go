@@ -42,14 +42,14 @@ func ParseWorkspaceName(workspace string) (moduleName, orbitName string, err err
 	if workspace == "" {
 		return "", "", fmt.Errorf("module: workspace name cannot be empty")
 	}
-	idx := strings.LastIndex(workspace, "-")
+	idx := strings.Index(workspace, "-")
 	if idx <= 0 || idx == len(workspace)-1 {
-		return "", "", fmt.Errorf("module: workspace %q does not follow <module>-<orbit>", workspace)
+		return "", "", fmt.Errorf("module: workspace %q does not follow <orbit>-<module>", workspace)
 	}
-	moduleName = workspace[:idx]
-	orbitName = workspace[idx+1:]
+	orbitName = workspace[:idx]
+	moduleName = workspace[idx+1:]
 	if moduleName == "" || orbitName == "" {
-		return "", "", fmt.Errorf("module: workspace %q does not follow <module>-<orbit>", workspace)
+		return "", "", fmt.Errorf("module: workspace %q does not follow <orbit>-<module>", workspace)
 	}
 	return moduleName, orbitName, nil
 }

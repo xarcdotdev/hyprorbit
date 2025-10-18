@@ -82,7 +82,7 @@ func CreateTemporary(ctx context.Context, hypr runtime.HyprctlClient, state Temp
 func generateTemporaryName(orbitName string, existing map[string]struct{}) (string, error) {
 	var target string
 	for i := 1; i <= maxTemporaryWorkspace; i++ {
-		candidate := fmt.Sprintf("%d-%s", i, orbitName)
+		candidate := fmt.Sprintf("%s-%d", orbitName, i)
 		if _, ok := existing[candidate]; ok {
 			continue
 		}

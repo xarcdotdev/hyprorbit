@@ -477,7 +477,7 @@ func (s *Service) clients(ctx context.Context) ([]hyprctl.ClientInfo, error) {
 
 // WorkspaceName composes the workspace identifier for a module within an orbit.
 func WorkspaceName(moduleName, orbitName string) string {
-	return fmt.Sprintf("%s-%s", moduleName, orbitName)
+	return fmt.Sprintf("%s-%s", orbitName, moduleName)
 }
 
 func spawnProcess(ctx context.Context, command []string) error {
@@ -515,7 +515,7 @@ func bucketClients(clients []hyprctl.ClientInfo, matcher config.Matcher, compile
 	if global {
 		globalMatches = make([]hyprctl.ClientInfo, 0)
 	}
-	suffix := "-" + orbitName
+	prefix := orbitName + "-"
 	for _, client := range clients {
 		value := client.FieldValue(matcher.Field)
 		if !matches(compiled, matcher.Expr, value) {
@@ -526,7 +526,7 @@ func bucketClients(clients []hyprctl.ClientInfo, matcher config.Matcher, compile
 			workspaceMatches = append(workspaceMatches, client)
 			continue
 		}
-		if strings.HasSuffix(ws, suffix) {
+		if strings.HasPrefix(ws, prefix) {
 			orbitMatches = append(orbitMatches, client)
 			continue
 		}

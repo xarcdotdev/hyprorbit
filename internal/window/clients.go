@@ -31,9 +31,9 @@ func SanitizeClient(client hyprctl.ClientInfo) hyprctl.ClientInfo {
 func FilterByScope(clients []hyprctl.ClientInfo, scope Scope, workspace string, orbit string) []hyprctl.ClientInfo {
 	workspace = strings.TrimSpace(workspace)
 	orbit = strings.TrimSpace(orbit)
-	suffix := ""
+	prefix := ""
 	if orbit != "" {
-		suffix = "-" + orbit
+		prefix = orbit + "-"
 	}
 
 	result := make([]hyprctl.ClientInfo, 0, len(clients))
@@ -49,7 +49,7 @@ func FilterByScope(clients []hyprctl.ClientInfo, scope Scope, workspace string, 
 			if orbit == "" {
 				continue
 			}
-			if wsName == "" || !strings.HasSuffix(wsName, suffix) {
+			if wsName == "" || !strings.HasPrefix(wsName, prefix) {
 				continue
 			}
 		case ScopeGlobal:
