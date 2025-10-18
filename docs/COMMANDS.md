@@ -92,7 +92,6 @@ hyprorbit window move current code/beta
 hyprorbit window move current module:code/orbit:beta
 ```
 
-//TODO: test module:index & module:regex & module:create
 **Supported targets:**
 - `module:<name>` – explicit module name (e.g., `module:code`)
 - `module:next` / `module:prev` – cycle through configured modules

@@ -7,7 +7,7 @@
 ⚠️ **This is experimental!** ⚠️ 
 
   <p align="center">
-Lightweight workspace orchestration for <a href="https://github.com/hyprwm/Hyprland">Hyprland</a> Power-Users.
+Lightweight workspace orchestration for <a href="https://github.com/hyprwm/Hyprland">Hyprland</a> power users.
     <br>
 
 **hyprorbit** is a stateful daemon + client system for Hyprland workspace management, written in Go.
@@ -113,6 +113,9 @@ bind = SUPER, N, exec, hyprorbit window move current module:create
 
 # Move all windows on current workspace to specific module in another orbit
 bind = SUPER ALT, 1, exec hyporbit window move workspace orbit:alpha/module:code
+
+# Move all windows (globally) to first module workspace of current orbit
+bind = SUPER ALT CTRL, M, exec hyprorbit window move all module:index:1
 ```
 
 See `hyprorbit --help` for full options.
@@ -208,9 +211,8 @@ module_watch:
 - ✅ Global window targeting with `--global` flag for cross-orbit window operations
 
 ### Planned Features
-- [ ] Docs: Add sane keybinding setup example
+- [ ] Add config for assigning workspaces/modules to monitors
 - [ ] Make Orbit-Alignment across monitors optional (Have independent orbits on each monitor)
-- [ ] Add config for assigning workspaces to monitors
 - [ ] Add window destroy command for orbit/workspace based cleanup
 - [ ] Configurable notifications  
 
