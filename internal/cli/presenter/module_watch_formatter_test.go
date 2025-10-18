@@ -1,22 +1,22 @@
-package main
+package presenter
 
 import (
 	"context"
 	"encoding/json"
 	"testing"
 
-	"hyprorbit/internal/app/service"
 	"hyprorbit/internal/config"
+	"hyprorbit/internal/daemon"
 	"hyprorbit/internal/orbit"
 )
 
 func TestModuleWatchFormatterGeneralDefaults(t *testing.T) {
-	formatter, err := newModuleWatchFormatter(context.Background(), moduleWatchFormatterOptions{})
+	formatter, err := NewModuleWatchFormatter(context.Background(), ModuleWatchFormatterOptions{})
 	if err != nil {
 		t.Fatalf("formatter: %v", err)
 	}
 
-	snapshot := service.StatusSnapshot{
+	snapshot := daemon.StatusSnapshot{
 		Workspace: "dev-alpha",
 		Module:    "dev",
 		Orbit: &orbit.Record{
@@ -68,7 +68,7 @@ func TestModuleWatchFormatterWaybarDefaults(t *testing.T) {
 		t.Fatalf("build effective: %v", err)
 	}
 
-	formatter, err := newModuleWatchFormatter(context.Background(), moduleWatchFormatterOptions{
+	formatter, err := NewModuleWatchFormatter(context.Background(), ModuleWatchFormatterOptions{
 		Waybar: true,
 		Config: effective,
 	})
@@ -76,7 +76,7 @@ func TestModuleWatchFormatterWaybarDefaults(t *testing.T) {
 		t.Fatalf("formatter: %v", err)
 	}
 
-	snapshot := service.StatusSnapshot{
+	snapshot := daemon.StatusSnapshot{
 		Workspace: "dev-alpha",
 		Module:    "dev",
 		Orbit: &orbit.Record{
@@ -140,7 +140,7 @@ func TestModuleWatchFormatterWaybarCustomAlt(t *testing.T) {
 		t.Fatalf("build effective: %v", err)
 	}
 
-	formatter, err := newModuleWatchFormatter(context.Background(), moduleWatchFormatterOptions{
+	formatter, err := NewModuleWatchFormatter(context.Background(), ModuleWatchFormatterOptions{
 		Waybar: true,
 		Config: effective,
 	})
@@ -148,7 +148,7 @@ func TestModuleWatchFormatterWaybarCustomAlt(t *testing.T) {
 		t.Fatalf("formatter: %v", err)
 	}
 
-	snapshot := service.StatusSnapshot{
+	snapshot := daemon.StatusSnapshot{
 		Workspace: "dev-alpha",
 		Module:    "dev",
 		Orbit: &orbit.Record{

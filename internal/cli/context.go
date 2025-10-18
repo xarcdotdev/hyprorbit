@@ -1,4 +1,4 @@
-package ctl
+package cli
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 type contextKey struct{}
 
 // ErrClientMissing signals that no control client is attached to the context.
-var ErrClientMissing = errors.New("ctl: client not initialised")
+var ErrClientMissing = errors.New("cli: client not initialised")
 
 // WithClient stores the control client on the provided context.
 func WithClient(ctx context.Context, client *Client) context.Context {

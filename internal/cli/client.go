@@ -1,4 +1,4 @@
-package ctl
+package cli
 
 import (
 	"bytes"
@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"hyprorbit/internal/cli/presenter"
 	"hyprorbit/internal/ipc"
 	"hyprorbit/internal/module"
 	"hyprorbit/internal/orbit"
@@ -26,6 +27,15 @@ type Options struct {
 	ConfigPath string
 }
 
+// PresenterOptions converts the client options into presenter-level settings.
+func (o Options) PresenterOptions() presenter.Options {
+	return presenter.Options{
+		JSON:    o.JSON,
+		Quiet:   o.Quiet,
+		NoColor: o.NoColor,
+	}
+}
+
 // Client speaks the IPC protocol with the hyprorbit daemon.
 type Client struct {
 	opts Options
@@ -38,26 +48,8 @@ type streamReadCloser struct {
 
 var dialIPC = ipc.DialContext
 
-// WindowMoveResult captures the outcome of moving a window.
-type WindowMoveResult struct {
-	Window    string `json:"window"`
-	Workspace string `json:"workspace"`
-	Module    string `json:"module,omitempty"`
-	Orbit     string `json:"orbit,omitempty"`
-	Created   bool   `json:"created,omitempty"`
-	Temporary bool   `json:"temporary,omitempty"`
-	Focused   bool   `json:"focused"`
-}
-
-// WindowSummary captures metadata about a Hyprland window relevant to move operations.
-type WindowSummary struct {
-	Address   string `json:"address"`
-	Class     string `json:"class,omitempty"`
-	Title     string `json:"title,omitempty"`
-	Workspace string `json:"workspace,omitempty"`
-	Module    string `json:"module,omitempty"`
-	Orbit     string `json:"orbit,omitempty"`
-}
+type WindowMoveResult = presenter.WindowMoveResult
+type WindowSummary = presenter.WindowSummary
 
 func (s *streamReadCloser) Close() error {
 	var err error
@@ -165,56 +157,6 @@ func (c *Client) OrbitList(ctx context.Context) ([]orbit.Summary, error) {
 	var summaries []orbit.Summary
 	if _, err := c.Call(ctx, req, &summaries); err != nil {
 		return nil, err
-	}
-	return summaries, nil
-}
-
-// WindowMove relocates a window to the requested target.
-func (c *Client) WindowMove(ctx context.Context, windowRef, orbitTarget, moduleTarget string, silent, global bool) ([]WindowMoveResult, error) {
-	req := ipc.NewRequest("window", "move")
-	args := []string{strings.TrimSpace(windowRef)}
-	if trimmed := strings.TrimSpace(orbitTarget); trimmed != "" {
-		args = append(args, trimmed)
-	}
-	if trimmed := strings.TrimSpace(moduleTarget); trimmed != "" {
-		args = append(args, trimmed)
-	}
-	if len(args) < 2 {
-		return nil, fmt.Errorf("window move: module target missing")
-	}
-	req.Args = args
-	req.Flags = map[string]any{"silent": silent, "global": global}
-	var raw json.RawMessage
-	if _, err := c.Call(ctx, req, &raw); err != nil {
-		return nil, err
-	}
-	trimmed := bytes.TrimSpace(raw)
-	if len(trimmed) == 0 {
-		return []WindowMoveResult{}, nil
-	}
-	if trimmed[0] == '[' {
-		var results []WindowMoveResult
-		if err := json.Unmarshal(trimmed, &results); err != nil {
-			return nil, err
-		}
-		return results, nil
-	}
-	var result WindowMoveResult
-	if err := json.Unmarshal(trimmed, &result); err != nil {
-		return nil, err
-	}
-	return []WindowMoveResult{result}, nil
-}
-
-// WindowMoveList fetches current window metadata for move operations.
-func (c *Client) WindowMoveList(ctx context.Context) ([]WindowSummary, error) {
-	req := ipc.NewRequest("window", "list")
-	var summaries []WindowSummary
-	if _, err := c.Call(ctx, req, &summaries); err != nil {
-		return nil, err
-	}
-	if summaries == nil {
-		summaries = []WindowSummary{}
 	}
 	return summaries, nil
 }
@@ -370,7 +312,7 @@ func (c *Client) ModuleSeed(ctx context.Context, moduleName string) ([]*module.R
 // ModuleList retrieves workspace summaries for configured and active workspaces.
 func (c *Client) ModuleList(ctx context.Context, filter string) ([]module.WorkspaceSummary, error) {
 	req := ipc.NewRequest("module", "list")
-	if filter != "" {
+	if strings.TrimSpace(filter) != "" {
 		req.Flags = map[string]any{"filter": filter}
 	}
 	var summaries []module.WorkspaceSummary
@@ -379,6 +321,56 @@ func (c *Client) ModuleList(ctx context.Context, filter string) ([]module.Worksp
 	}
 	if summaries == nil {
 		summaries = []module.WorkspaceSummary{}
+	}
+	return summaries, nil
+}
+
+// WindowMove relocates a window to the requested target.
+func (c *Client) WindowMove(ctx context.Context, windowRef, orbitTarget, moduleTarget string, silent, global bool) ([]WindowMoveResult, error) {
+	req := ipc.NewRequest("window", "move")
+	args := []string{strings.TrimSpace(windowRef)}
+	if trimmed := strings.TrimSpace(orbitTarget); trimmed != "" {
+		args = append(args, trimmed)
+	}
+	if trimmed := strings.TrimSpace(moduleTarget); trimmed != "" {
+		args = append(args, trimmed)
+	}
+	if len(args) < 2 {
+		return nil, fmt.Errorf("window move: module target missing")
+	}
+	req.Args = args
+	req.Flags = map[string]any{"silent": silent, "global": global}
+	var raw json.RawMessage
+	if _, err := c.Call(ctx, req, &raw); err != nil {
+		return nil, err
+	}
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 {
+		return []WindowMoveResult{}, nil
+	}
+	if trimmed[0] == '[' {
+		var results []WindowMoveResult
+		if err := json.Unmarshal(trimmed, &results); err != nil {
+			return nil, err
+		}
+		return results, nil
+	}
+	var result WindowMoveResult
+	if err := json.Unmarshal(trimmed, &result); err != nil {
+		return nil, err
+	}
+	return []WindowMoveResult{result}, nil
+}
+
+// WindowMoveList fetches current window metadata for move operations.
+func (c *Client) WindowMoveList(ctx context.Context) ([]WindowSummary, error) {
+	req := ipc.NewRequest("window", "list")
+	var summaries []WindowSummary
+	if _, err := c.Call(ctx, req, &summaries); err != nil {
+		return nil, err
+	}
+	if summaries == nil {
+		summaries = []WindowSummary{}
 	}
 	return summaries, nil
 }

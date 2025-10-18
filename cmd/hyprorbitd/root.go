@@ -9,7 +9,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	"hyprorbit/internal/app/service"
+	"hyprorbit/internal/daemon"
 )
 
 func execute() int {
@@ -53,7 +53,7 @@ func newRootCommand() *cobra.Command {
 	return cmd
 }
 
-func collectOptions(flags *pflag.FlagSet, cfgPath, socketPath, logLevel, logFormat string, cacheTTL time.Duration, disableCache bool) service.Options {
+func collectOptions(flags *pflag.FlagSet, cfgPath, socketPath, logLevel, logFormat string, cacheTTL time.Duration, disableCache bool) daemon.Options {
 	if flags != nil {
 		cfgPath, _ = flags.GetString("config")
 		socketPath, _ = flags.GetString("socket")
@@ -63,7 +63,7 @@ func collectOptions(flags *pflag.FlagSet, cfgPath, socketPath, logLevel, logForm
 		disableCache, _ = flags.GetBool("no-cache")
 	}
 
-	return service.Options{
+	return daemon.Options{
 		ConfigPath:   cfgPath,
 		SocketPath:   socketPath,
 		LogLevel:     logLevel,
@@ -73,11 +73,11 @@ func collectOptions(flags *pflag.FlagSet, cfgPath, socketPath, logLevel, logForm
 	}
 }
 
-func runServer(ctx context.Context, opts service.Options) error {
+func runServer(ctx context.Context, opts daemon.Options) error {
 	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	srv, err := service.NewServer(ctx, opts)
+	srv, err := daemon.NewServer(ctx, opts)
 	if err != nil {
 		return err
 	}

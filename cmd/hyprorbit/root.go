@@ -7,7 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"hyprorbit/internal/app/ctl"
+	"hyprorbit/internal/cli"
 	"hyprorbit/internal/runtime"
 )
 
@@ -30,7 +30,7 @@ func newRootCommand() *cobra.Command {
 		SilenceErrors: false,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			if _, err := ctl.FromContext(ctx); err == nil {
+			if _, err := cli.FromContext(ctx); err == nil {
 				return nil
 			}
 
@@ -43,7 +43,7 @@ func newRootCommand() *cobra.Command {
 			noColor := flagNoColor || envNoColor
 			colorEnabled = !noColor
 
-			client := ctl.NewClient(ctl.Options{
+			client := cli.NewClient(cli.Options{
 				SocketPath: socket,
 				JSON:       jsonOut,
 				Quiet:      quiet,
@@ -51,7 +51,7 @@ func newRootCommand() *cobra.Command {
 				ConfigPath: configPath,
 			})
 
-			cmd.SetContext(ctl.WithClient(ctx, client))
+			cmd.SetContext(cli.WithClient(ctx, client))
 			return nil
 		},
 	}

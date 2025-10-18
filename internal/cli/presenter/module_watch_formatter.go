@@ -1,4 +1,4 @@
-package main
+package presenter
 
 import (
 	"context"
@@ -6,18 +6,18 @@ import (
 	"strconv"
 	"strings"
 
-	"hyprorbit/internal/app/service"
 	"hyprorbit/internal/config"
+	"hyprorbit/internal/daemon"
 )
 
-type moduleWatchFormatterOptions struct {
+type ModuleWatchFormatterOptions struct {
 	Waybar           bool
 	ConfigPath       string
 	WaybarConfigPath string
 	Config           *config.EffectiveConfig
 }
 
-type moduleWatchFormatter struct {
+type ModuleWatchFormatter struct {
 	mode         moduleWatchMode
 	waybarConfig config.WaybarModuleWatchSettings
 }
@@ -29,9 +29,9 @@ const (
 	moduleWatchModeWaybar
 )
 
-func newModuleWatchFormatter(ctx context.Context, opts moduleWatchFormatterOptions) (*moduleWatchFormatter, error) {
+func NewModuleWatchFormatter(ctx context.Context, opts ModuleWatchFormatterOptions) (*ModuleWatchFormatter, error) {
 	mode := moduleWatchModeGeneral
-	formatter := &moduleWatchFormatter{mode: mode}
+	formatter := &ModuleWatchFormatter{mode: mode}
 	if !opts.Waybar {
 		return formatter, nil
 	}
@@ -55,7 +55,7 @@ func newModuleWatchFormatter(ctx context.Context, opts moduleWatchFormatterOptio
 	return formatter, nil
 }
 
-func (f *moduleWatchFormatter) Format(snapshot service.StatusSnapshot) ([]byte, error) {
+func (f *ModuleWatchFormatter) Format(snapshot daemon.StatusSnapshot) ([]byte, error) {
 	switch f.mode {
 	case moduleWatchModeWaybar:
 		return f.formatWaybar(snapshot)
@@ -64,7 +64,7 @@ func (f *moduleWatchFormatter) Format(snapshot service.StatusSnapshot) ([]byte, 
 	}
 }
 
-func (f *moduleWatchFormatter) formatGeneral(snapshot service.StatusSnapshot) ([]byte, error) {
+func (f *ModuleWatchFormatter) formatGeneral(snapshot daemon.StatusSnapshot) ([]byte, error) {
 	text := snapshot.Module
 	if strings.TrimSpace(text) == "" {
 		text = snapshot.Workspace
@@ -123,7 +123,7 @@ func (f *moduleWatchFormatter) formatGeneral(snapshot service.StatusSnapshot) ([
 	return json.Marshal(payload)
 }
 
-func (f *moduleWatchFormatter) formatWaybar(snapshot service.StatusSnapshot) ([]byte, error) {
+func (f *ModuleWatchFormatter) formatWaybar(snapshot daemon.StatusSnapshot) ([]byte, error) {
 	cfg := f.waybarConfig
 
 	payload := make(map[string]any)
@@ -158,7 +158,7 @@ func (f *moduleWatchFormatter) formatWaybar(snapshot service.StatusSnapshot) ([]
 	return json.Marshal(payload)
 }
 
-func (f *moduleWatchFormatter) firstNonEmpty(sources []config.WaybarValueSource, snapshot service.StatusSnapshot) string {
+func (f *ModuleWatchFormatter) firstNonEmpty(sources []config.WaybarValueSource, snapshot daemon.StatusSnapshot) string {
 	for _, src := range sources {
 		value := strings.TrimSpace(f.valueFromSource(src, snapshot))
 		if value != "" {
@@ -168,7 +168,7 @@ func (f *moduleWatchFormatter) firstNonEmpty(sources []config.WaybarValueSource,
 	return ""
 }
 
-func (f *moduleWatchFormatter) valueFromSource(src config.WaybarValueSource, snapshot service.StatusSnapshot) string {
+func (f *ModuleWatchFormatter) valueFromSource(src config.WaybarValueSource, snapshot daemon.StatusSnapshot) string {
 	switch src {
 	case config.WaybarValueModule:
 		return snapshot.Module
@@ -196,7 +196,7 @@ func (f *moduleWatchFormatter) valueFromSource(src config.WaybarValueSource, sna
 	return ""
 }
 
-func (f *moduleWatchFormatter) buildWaybarClasses(cfg config.WaybarClassSettings, snapshot service.StatusSnapshot) []string {
+func (f *ModuleWatchFormatter) buildWaybarClasses(cfg config.WaybarClassSettings, snapshot daemon.StatusSnapshot) []string {
 	classes := make([]string, 0, len(cfg.Sources))
 	seen := make(map[string]struct{})
 	add := func(values ...string) {
@@ -259,7 +259,7 @@ func (f *moduleWatchFormatter) buildWaybarClasses(cfg config.WaybarClassSettings
 	return classes
 }
 
-func (f *moduleWatchFormatter) computePercentage(cfg config.WaybarPercentageSetting, snapshot service.StatusSnapshot) (int, bool) {
+func (f *ModuleWatchFormatter) computePercentage(cfg config.WaybarPercentageSetting, snapshot daemon.StatusSnapshot) (int, bool) {
 	if cfg.Max <= 0 {
 		return 0, false
 	}

@@ -3,7 +3,8 @@ package main
 import (
 	"github.com/spf13/cobra"
 
-	"hyprorbit/internal/app/ctl"
+	"hyprorbit/internal/cli"
+	"hyprorbit/internal/cli/presenter"
 )
 
 func newOrbitCommand() *cobra.Command {
@@ -27,15 +28,16 @@ func newOrbitGetCommand() *cobra.Command {
 		Short: "Print the active orbit",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, err := ctl.FromContext(cmd.Context())
+			client, err := cli.FromContext(cmd.Context())
 			if err != nil {
 				return err
 			}
+			opts := client.Options()
 			record, err := client.OrbitGet(cmd.Context())
 			if err != nil {
 				return err
 			}
-			return ctl.PrintOrbit(cmd.OutOrStdout(), client.Options(), record)
+			return presenter.PrintOrbit(cmd.OutOrStdout(), opts.PresenterOptions(), record)
 		},
 	}
 }
@@ -46,15 +48,16 @@ func newOrbitNextCommand() *cobra.Command {
 		Short: "Switch to the next orbit",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, err := ctl.FromContext(cmd.Context())
+			client, err := cli.FromContext(cmd.Context())
 			if err != nil {
 				return err
 			}
+			opts := client.Options()
 			record, err := client.OrbitNext(cmd.Context())
 			if err != nil {
 				return err
 			}
-			return ctl.PrintOrbit(cmd.OutOrStdout(), client.Options(), record)
+			return presenter.PrintOrbit(cmd.OutOrStdout(), opts.PresenterOptions(), record)
 		},
 	}
 }
@@ -65,15 +68,16 @@ func newOrbitPrevCommand() *cobra.Command {
 		Short: "Switch to the previous orbit",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, err := ctl.FromContext(cmd.Context())
+			client, err := cli.FromContext(cmd.Context())
 			if err != nil {
 				return err
 			}
+			opts := client.Options()
 			record, err := client.OrbitPrev(cmd.Context())
 			if err != nil {
 				return err
 			}
-			return ctl.PrintOrbit(cmd.OutOrStdout(), client.Options(), record)
+			return presenter.PrintOrbit(cmd.OutOrStdout(), opts.PresenterOptions(), record)
 		},
 	}
 }
@@ -84,15 +88,16 @@ func newOrbitSetCommand() *cobra.Command {
 		Short: "Activate a specific orbit",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, err := ctl.FromContext(cmd.Context())
+			client, err := cli.FromContext(cmd.Context())
 			if err != nil {
 				return err
 			}
+			opts := client.Options()
 			record, err := client.OrbitSet(cmd.Context(), args[0])
 			if err != nil {
 				return err
 			}
-			return ctl.PrintOrbit(cmd.OutOrStdout(), client.Options(), record)
+			return presenter.PrintOrbit(cmd.OutOrStdout(), opts.PresenterOptions(), record)
 		},
 	}
 }
@@ -103,15 +108,16 @@ func newOrbitListCommand() *cobra.Command {
 		Short: "List configured orbits",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, err := ctl.FromContext(cmd.Context())
+			client, err := cli.FromContext(cmd.Context())
 			if err != nil {
 				return err
 			}
+			opts := client.Options()
 			summaries, err := client.OrbitList(cmd.Context())
 			if err != nil {
 				return err
 			}
-			return ctl.PrintOrbitSummaries(cmd.OutOrStdout(), client.Options(), summaries)
+			return presenter.PrintOrbitSummaries(cmd.OutOrStdout(), opts.PresenterOptions(), summaries)
 		},
 	}
 }

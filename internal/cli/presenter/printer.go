@@ -1,4 +1,4 @@
-package ctl
+package presenter
 
 import (
 	"encoding/json"
@@ -88,8 +88,9 @@ func PrintModuleList(w io.Writer, opts Options, results []*module.Result) error 
 		}
 		return encodeJSON(w, results)
 	}
+	plainOpts := Options{JSON: false, Quiet: false, NoColor: opts.NoColor}
 	for _, res := range results {
-		if err := PrintModule(w, Options{JSON: false, Quiet: false, NoColor: opts.NoColor}, res); err != nil {
+		if err := PrintModule(w, plainOpts, res); err != nil {
 			return err
 		}
 	}
@@ -108,7 +109,6 @@ func PrintWorkspaceSummaries(w io.Writer, opts Options, summaries []module.Works
 		return encodeJSON(w, summaries)
 	}
 	headers := []string{"NAME", "STATUS", "MODULE", "ORBIT", "MONITOR", "WINDOWS"}
-	// Prepare table data and track maximum widths per column.
 	rows := make([][]string, len(summaries))
 	widths := make([]int, len(headers))
 	for i, header := range headers {
@@ -148,7 +148,6 @@ func PrintWorkspaceSummaries(w io.Writer, opts Options, summaries []module.Works
 		}
 	}
 
-	// Render header.
 	reset := colorOrEmpty(opts, ansiReset)
 	if err := printTableRow(w, headers, widths, nil, reset, true); err != nil {
 		return err

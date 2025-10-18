@@ -6,7 +6,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"hyprorbit/internal/app/ctl"
+	"hyprorbit/internal/cli"
+	"hyprorbit/internal/cli/presenter"
 )
 
 func newWindowCommand() *cobra.Command {
@@ -30,7 +31,7 @@ func newWindowMoveCommand() *cobra.Command {
 		Short: "Move a window to a module workspace",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, err := ctl.FromContext(cmd.Context())
+			client, err := cli.FromContext(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -40,11 +41,12 @@ func newWindowMoveCommand() *cobra.Command {
 				return err
 			}
 
+			opts := client.Options()
 			results, err := client.WindowMove(cmd.Context(), args[0], orbitTarget, moduleTarget, silent, global)
 			if err != nil {
 				return err
 			}
-			return ctl.PrintWindowMoves(cmd.OutOrStdout(), client.Options(), results)
+			return presenter.PrintWindowMoves(cmd.OutOrStdout(), opts.PresenterOptions(), results)
 		},
 	}
 
@@ -60,16 +62,17 @@ func newWindowListCommand() *cobra.Command {
 		Short: "List windows with their module and orbit assignments",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, err := ctl.FromContext(cmd.Context())
+			client, err := cli.FromContext(cmd.Context())
 			if err != nil {
 				return err
 			}
 
+			opts := client.Options()
 			windows, err := client.WindowMoveList(cmd.Context())
 			if err != nil {
 				return err
 			}
-			return ctl.PrintWindowList(cmd.OutOrStdout(), client.Options(), windows)
+			return presenter.PrintWindowList(cmd.OutOrStdout(), opts.PresenterOptions(), windows)
 		},
 	}
 }

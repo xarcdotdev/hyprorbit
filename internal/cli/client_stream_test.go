@@ -1,4 +1,4 @@
-package ctl
+package cli
 
 import (
 	"bufio"
@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"hyprorbit/internal/app/service"
+	"hyprorbit/internal/daemon"
 	"hyprorbit/internal/ipc"
 	"hyprorbit/internal/orbit"
 )
@@ -48,7 +48,7 @@ func TestClientModuleWatch(t *testing.T) {
 			return
 		}
 
-		snapshots := []service.StatusSnapshot{
+		snapshots := []daemon.StatusSnapshot{
 			{Workspace: "code-alpha", Module: "code", Orbit: &orbit.Record{Name: "alpha"}},
 			{Workspace: "comm-alpha", Module: "comm", Orbit: &orbit.Record{Name: "alpha"}},
 		}
@@ -77,7 +77,7 @@ func TestClientModuleWatch(t *testing.T) {
 	if !scanner.Scan() {
 		t.Fatalf("expected first snapshot, got error: %v", scanner.Err())
 	}
-	var first service.StatusSnapshot
+	var first daemon.StatusSnapshot
 	if err := json.Unmarshal(scanner.Bytes(), &first); err != nil {
 		t.Fatalf("unmarshal first snapshot: %v", err)
 	}
@@ -88,7 +88,7 @@ func TestClientModuleWatch(t *testing.T) {
 	if !scanner.Scan() {
 		t.Fatalf("expected second snapshot, got error: %v", scanner.Err())
 	}
-	var second service.StatusSnapshot
+	var second daemon.StatusSnapshot
 	if err := json.Unmarshal(scanner.Bytes(), &second); err != nil {
 		t.Fatalf("unmarshal second snapshot: %v", err)
 	}

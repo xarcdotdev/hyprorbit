@@ -1,4 +1,4 @@
-package ctl
+package cli
 
 // Error represents a daemon-side failure annotated with an exit code.
 type Error struct {

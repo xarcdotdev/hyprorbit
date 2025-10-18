@@ -7,8 +7,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"hyprorbit/internal/app/ctl"
-	"hyprorbit/internal/app/service"
+	"hyprorbit/internal/cli"
+	"hyprorbit/internal/cli/presenter"
+	"hyprorbit/internal/daemon"
 	"hyprorbit/internal/module"
 	"hyprorbit/internal/runtime"
 )
@@ -35,15 +36,16 @@ func newModuleGetCommand() *cobra.Command {
 		Short: "Print details about the current module workspace",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, err := ctl.FromContext(cmd.Context())
+			client, err := cli.FromContext(cmd.Context())
 			if err != nil {
 				return err
 			}
+			opts := client.Options()
 			status, err := client.ModuleGet(cmd.Context())
 			if err != nil {
 				return err
 			}
-			return ctl.PrintModuleStatus(cmd.OutOrStdout(), client.Options(), status)
+			return presenter.PrintModuleStatus(cmd.OutOrStdout(), opts.PresenterOptions(), status)
 		},
 	}
 }
@@ -54,12 +56,13 @@ func newModuleJumpCommand() *cobra.Command {
 		Short: "Jump to a module workspace in the active orbit",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, err := ctl.FromContext(cmd.Context())
+			client, err := cli.FromContext(cmd.Context())
 			if err != nil {
 				return err
 			}
 
 			arg := args[0]
+			opts := client.Options()
 			var res *module.Result
 			switch arg {
 			case "next":
@@ -74,7 +77,7 @@ func newModuleJumpCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return ctl.PrintModule(cmd.OutOrStdout(), client.Options(), res)
+			return presenter.PrintModule(cmd.OutOrStdout(), opts.PresenterOptions(), res)
 		},
 	}
 }
@@ -99,12 +102,13 @@ func newModuleFocusCommand() *cobra.Command {
 				}
 			}
 
-			client, err := ctl.FromContext(cmd.Context())
+			client, err := cli.FromContext(cmd.Context())
 			if err != nil {
 				return err
 			}
 
-			res, err := client.ModuleFocus(cmd.Context(), args[0], ctl.ModuleFocusOptions{
+			opts := client.Options()
+			res, err := client.ModuleFocus(cmd.Context(), args[0], cli.ModuleFocusOptions{
 				Matcher:    matchExpr,
 				Command:    spawnCmd,
 				ForceFloat: floatWin,
@@ -114,7 +118,7 @@ func newModuleFocusCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return ctl.PrintModule(cmd.OutOrStdout(), client.Options(), res)
+			return presenter.PrintModule(cmd.OutOrStdout(), opts.PresenterOptions(), res)
 		},
 	}
 
@@ -133,15 +137,16 @@ func newModuleSeedCommand() *cobra.Command {
 		Short: "Populate a module workspace",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, err := ctl.FromContext(cmd.Context())
+			client, err := cli.FromContext(cmd.Context())
 			if err != nil {
 				return err
 			}
+			opts := client.Options()
 			results, err := client.ModuleSeed(cmd.Context(), args[0])
 			if err != nil {
 				return err
 			}
-			return ctl.PrintModuleList(cmd.OutOrStdout(), client.Options(), results)
+			return presenter.PrintModuleList(cmd.OutOrStdout(), opts.PresenterOptions(), results)
 		},
 	}
 }
@@ -157,7 +162,7 @@ func newModuleWatchCommand() *cobra.Command {
 		Short: "Stream module status updates",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, err := ctl.FromContext(cmd.Context())
+			client, err := cli.FromContext(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -173,9 +178,9 @@ func newModuleWatchCommand() *cobra.Command {
 			scanner.Buffer(make([]byte, 0, 4096), 256*1024)
 			writer := cmd.OutOrStdout()
 
-			var formatter *moduleWatchFormatter
+			var formatter *presenter.ModuleWatchFormatter
 			if !opts.JSON && !opts.Quiet {
-				formatter, err = newModuleWatchFormatter(cmd.Context(), moduleWatchFormatterOptions{
+				formatter, err = presenter.NewModuleWatchFormatter(cmd.Context(), presenter.ModuleWatchFormatterOptions{
 					Waybar:           flagWaybar,
 					ConfigPath:       opts.ConfigPath,
 					WaybarConfigPath: flagWaybarConfig,
@@ -198,7 +203,7 @@ func newModuleWatchCommand() *cobra.Command {
 					continue
 				}
 
-				var snapshot service.StatusSnapshot
+				var snapshot daemon.StatusSnapshot
 				if err := json.Unmarshal(line, &snapshot); err != nil {
 					return fmt.Errorf("module watch: decode snapshot: %w", err)
 				}
@@ -260,16 +265,17 @@ func newModuleListCommand() *cobra.Command {
 				return fmt.Errorf("specify at most one of --active, --inactive, or --all")
 			}
 
-			client, err := ctl.FromContext(cmd.Context())
+			client, err := cli.FromContext(cmd.Context())
 			if err != nil {
 				return err
 			}
 
+			opts := client.Options()
 			summaries, err := client.ModuleList(cmd.Context(), filter)
 			if err != nil {
 				return err
 			}
-			return ctl.PrintWorkspaceSummaries(cmd.OutOrStdout(), client.Options(), summaries)
+			return presenter.PrintWorkspaceSummaries(cmd.OutOrStdout(), opts.PresenterOptions(), summaries)
 		},
 	}
 

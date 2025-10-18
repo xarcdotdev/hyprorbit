@@ -6,7 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"hyprorbit/internal/app/ctl"
+	"hyprorbit/internal/cli"
 )
 
 func newDaemonCommand() *cobra.Command {
@@ -25,7 +25,7 @@ func newDaemonReloadCommand() *cobra.Command {
 		Short: "Reload daemon configuration",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, err := ctl.FromContext(cmd.Context())
+			client, err := cli.FromContext(cmd.Context())
 			if err != nil {
 				return err
 			}

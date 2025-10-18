@@ -13,7 +13,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"hyprorbit/internal/app/ctl"
+	"hyprorbit/internal/cli"
 )
 
 const (
@@ -36,7 +36,7 @@ func newInitCommand() *cobra.Command {
 		Use:   "init",
 		Short: "Initialize hyprorbit configuration and workspace state",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, err := ctl.FromContext(cmd.Context())
+			client, err := cli.FromContext(cmd.Context())
 			if err != nil {
 				return fmt.Errorf("failed to create daemon client: %w", err)
 			}
@@ -155,7 +155,7 @@ func ensureWaybarConfigFile(out interface{ Write([]byte) (int, error) }, path st
 	return nil
 }
 
-func resetWorkspaces(ctx context.Context, client *ctl.Client, out interface{ Write([]byte) (int, error) }) error {
+func resetWorkspaces(ctx context.Context, client *cli.Client, out interface{ Write([]byte) (int, error) }) error {
 	spinner := newSpinner(out, "Aligning orbit", time.Millisecond*80)
 	spinner.Start()
 	defer spinner.Stop()
@@ -169,7 +169,7 @@ func resetWorkspaces(ctx context.Context, client *ctl.Client, out interface{ Wri
 	return nil
 }
 
-func ensureDaemonRunning(ctx context.Context, client *ctl.Client) error {
+func ensureDaemonRunning(ctx context.Context, client *cli.Client) error {
 	if client == nil {
 		return fmt.Errorf("init: daemon client unavailable")
 	}
