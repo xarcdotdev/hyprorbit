@@ -1,10 +1,7 @@
 <!-- PROJECT LOGO -->
 <div align="center">
-    <img src="docs/images/logo_text.png" alt="Logo" width="350">
-<h2 align="center">hyprorbit v0.1.1</h2>
-
-<!-- DISCLAIMER -->
-⚠️ **This is experimental!** ⚠️ 
+    <img src="docs/images/logo_text.webp" alt="Logo" width="350">
+<h2 align="center">hyprorbit v0.1.2</h2>
 
   <p align="center">
 Lightweight workspace orchestration for <a href="https://github.com/hyprwm/Hyprland">Hyprland</a> power users.
