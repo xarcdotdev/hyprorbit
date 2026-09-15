@@ -571,7 +571,7 @@ func (s *Service) FocusMonitorJump(ctx context.Context, monitorName, moduleName 
 		return nil, err
 	}
 	commands := [][]string{
-		{"focusmonitor", "name:" + monitorName},
+		{"focusmonitor", monitorName},
 		{"workspace", "name:" + workspace},
 	}
 	if _, err := s.hyprctl.BatchDispatch(ctx, commands...); err != nil {

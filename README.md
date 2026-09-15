@@ -59,6 +59,8 @@ hyprorbit orbit next         # switch orbit
 - [Hyprland](https://hyprland.org/) compositor
 - Go 1.21+
 
+Hyprland 0.56 is supported automatically through both legacy and Lua configuration dispatch interfaces; no hyprorbit configuration migration is required. Reset and temporary cleanup rely on normal Hyprland workspace disappearance: they do not force-delete persistent or visible workspaces, and reset reports any remaining ones.
+
 ### 2. Install
 
 ```sh
@@ -70,6 +72,10 @@ make
 # Install to PATH (recommended)
 sudo cp hyprorbit hyprorbitd /usr/local/bin/
 ```
+
+### Upgrading
+
+Rebuild and reinstall **both** `hyprorbit` and `hyprorbitd`, then restart the daemon. `hyprorbit daemon reload` reloads configuration only; it does not reload the executable.
 
 ### 3. Start Daemon
 

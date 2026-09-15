@@ -1148,7 +1148,7 @@ func (d *Dispatcher) streamModuleStatus() StreamHandler {
 	}
 }
 
-// resetWorkspaces destroys all workspaces except configured modules and the primary workspace.
+// resetWorkspaces evacuates clients and waits for non-module workspaces to disappear.
 func (d *Dispatcher) resetWorkspaces(ctx context.Context) error {
 	d.debugf("resetWorkspaces: starting workspace reset")
 	hypr, err := d.requireHyprctlClient()
@@ -1165,28 +1165,25 @@ func (d *Dispatcher) resetWorkspaces(ctx context.Context) error {
 	}
 
 	d.debugf("resetWorkspaces: active orbit=%q", orbitName)
-	if err := d.alignMonitorsToOrbit(ctx, orbitName, false, ""); err != nil {
-		return fmt.Errorf("workspace reset: %w", err)
-	}
-
 	plan, err := d.buildWorkspaceResetPlan(ctx, hypr, modSvc, orbitName)
 	if err != nil {
 		return err
 	}
+
+	// Alignment and evacuation can partially mutate the desktop before failing.
+	defer d.state.InvalidateClients()
+	if err := d.alignMonitorsToOrbit(ctx, orbitName, false, ""); err != nil {
+		return d.reconcileFailedWorkspaceReset(ctx, hypr, plan.targets, fmt.Errorf("workspace reset: %w", err))
+	}
 	if len(plan.targets) == 0 {
 		return nil
 	}
-
 	if err := d.moveClientsToPrimaryWorkspace(ctx, hypr, plan); err != nil {
+		return d.reconcileFailedWorkspaceReset(ctx, hypr, plan.targets, err)
+	}
+	if err := d.verifyWorkspaceRemoval(ctx, hypr, plan.targets); err != nil {
 		return err
 	}
-
-	if err := d.executeWorkspaceKillCommands(ctx, hypr, plan.targets); err != nil {
-		return err
-	}
-
-	d.state.InvalidateClients()
-	d.state.clearTempModules()
 	d.debugf("resetWorkspaces: workspace reset complete")
 	return nil
 }

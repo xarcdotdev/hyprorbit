@@ -97,9 +97,8 @@ func generateTemporaryName(orbitName string, existing map[string]struct{}) (stri
 	return target, nil
 }
 
-// CleanupTemporary removes an empty temporary workspace.
-// Returns true only when the workspace was removed.
-// Only cleans up if workspace is temporary, not currently active, and has no windows.
+// CleanupTemporary forgets a registered temporary workspace only after observing
+// that Hyprland has removed it. Present workspaces, even empty ones, are retained.
 func CleanupTemporary(ctx context.Context, hypr runtime.HyprctlClient, state TemporaryStateProvider, targetWorkspace string) bool {
 	targetWorkspace = strings.TrimSpace(targetWorkspace)
 	if targetWorkspace == "" || hypr == nil {
@@ -118,26 +117,17 @@ func CleanupTemporary(ctx context.Context, hypr runtime.HyprctlClient, state Tem
 		return false
 	}
 
-	if wsName, err := ActiveName(ctx, hypr); err == nil {
-		if wsName == targetWorkspace {
-			return false
-		}
-	}
-
-	count, err := WindowCount(ctx, hypr, targetWorkspace)
+	workspaces, err := hypr.Workspaces(ctx)
 	if err != nil {
 		state.Logf("temp workspace cleanup %s: %v", targetWorkspace, err)
 		return false
 	}
-	if count > 0 {
-		return false
-	}
-
-	if err := hypr.Dispatch(ctx, "dispatch", "killworkspace", "name:"+targetWorkspace); err != nil {
-		state.Logf("temp workspace kill %s: %v", targetWorkspace, err)
-		return false
+	for _, ws := range workspaces {
+		if strings.TrimSpace(ws.Name) == targetWorkspace {
+			return false
+		}
 	}
 	state.UnregisterTempModule(orbitName, moduleName)
-	state.Logf("removed temporary workspace %s", targetWorkspace)
+	state.Logf("temporary workspace %s disappeared; removed registration", targetWorkspace)
 	return true
 }

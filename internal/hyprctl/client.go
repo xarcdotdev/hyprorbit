@@ -62,15 +62,22 @@ func (c *Client) debugf(format string, args ...any) {
 
 // Dispatch issues `hyprctl dispatch` with the provided arguments.
 func (c *Client) Dispatch(ctx context.Context, args ...string) error {
-	c.debugf("Dispatch: args=%v", args)
-	payload := append([]string{"dispatch"}, args...)
-	err := c.run(ctx, payload...)
+	if len(args) == 0 {
+		return fmt.Errorf("dispatch: dispatcher missing")
+	}
+	parser, err := c.detectParser(ctx)
 	if err != nil {
-		c.debugf("Dispatch: failed with args=%v: %v", args, err)
 		return err
 	}
-	c.debugf("Dispatch: success with args=%v", args)
-	return nil
+	payload, err := serializeDispatch(parser, args)
+	if err != nil {
+		return err
+	}
+	out, err := c.runCombined(ctx, payload...)
+	if err != nil {
+		return err
+	}
+	return dispatchResult(out)
 }
 
 // Clients returns the cached JSON output from `hyprctl clients -j`.
@@ -233,39 +240,70 @@ func (c *Client) Batch(ctx context.Context, commands ...[]string) ([]BatchResult
 		return nil, nil
 	}
 
-	parts := make([]string, 0, len(commands))
-	labels := make([]string, 0, len(commands))
+	active := make([][]string, 0, len(commands))
+	mutation := false
 	for _, cmd := range commands {
 		if len(cmd) == 0 {
 			continue
 		}
-		label := strings.Join(cmd, " ")
-		labels = append(labels, label)
-		parts = append(parts, label)
+		active = append(active, cmd)
+		if !batchQuery(strings.TrimPrefix(cmd[0], "j/")) {
+			mutation = true
+		}
 	}
-
-	if len(parts) == 0 {
+	if len(active) == 0 {
 		return nil, nil
 	}
-
-	joined := strings.Join(parts, ";")
-	c.debugf("Batch: executing %d command(s): %v", len(labels), labels)
-	output, err := c.runCombined(ctx, "--batch", joined)
+	parser := legacyParser
+	if mutation {
+		var err error
+		parser, err = c.detectParser(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
+	parts := make([]string, 0, len(active))
+	labels := make([]string, 0, len(active))
+	// Serialize and validate the entire batch before sending any command.
+	for _, cmd := range active {
+		labels = append(labels, strings.Join(cmd, " "))
+		wire := cmd
+		if cmd[0] == "dispatch" {
+			var err error
+			wire, err = serializeDispatch(parser, cmd[1:])
+			if err != nil {
+				return nil, err
+			}
+		} else if cmd[0] == "keyword" && parser == luaParser {
+			return nil, fmt.Errorf("batch: keyword unsupported with Lua config manager")
+		}
+		if err := safeBatchCommand(wire); err != nil {
+			return nil, err
+		}
+		parts = append(parts, strings.Join(wire, " "))
+	}
+	output, err := c.runCombined(ctx, "--batch", strings.Join(parts, ";"))
 	if err != nil {
-		c.debugf("Batch: failed to execute commands: %v", err)
 		return nil, err
 	}
-
-	rows := bytes.Split(bytes.TrimRight(output, "\n"), []byte("\n"))
-	results := make([]BatchResult, 0, len(labels))
-	for i, label := range labels {
-		var out []byte
-		if i < len(rows) {
-			out = append([]byte(nil), rows[i]...)
-		}
-		results = append(results, BatchResult{Command: label, Output: out})
+	// Hyprland separates replies with three newlines, not individual lines.
+	rows := bytes.Split(output, []byte("\n\n\n"))
+	// Some versions append the separator after the final reply.
+	if len(rows) == len(active)+1 && len(bytes.TrimSpace(rows[len(rows)-1])) == 0 {
+		rows = rows[:len(rows)-1]
 	}
-	c.debugf("Batch: successfully executed %d command(s)", len(results))
+	if len(rows) != len(active) {
+		return nil, fmt.Errorf("batch: expected %d replies, got %d", len(active), len(rows))
+	}
+	results := make([]BatchResult, 0, len(active))
+	for i, cmd := range active {
+		results = append(results, BatchResult{Command: labels[i], Output: append([]byte(nil), rows[i]...)})
+		if cmd[0] == "dispatch" {
+			if err := dispatchResult(rows[i]); err != nil {
+				return nil, fmt.Errorf("batch command %d (%s): %w", i+1, labels[i], err)
+			}
+		}
+	}
 	return results, nil
 }
 
@@ -282,11 +320,6 @@ func (c *Client) BatchDispatch(ctx context.Context, dispatches ...[]string) ([]B
 	return c.Batch(ctx, commands...)
 }
 
-func (c *Client) run(ctx context.Context, args ...string) error {
-	_, err := c.runCombined(ctx, args...)
-	return err
-}
-
 func (c *Client) runCombined(ctx context.Context, args ...string) ([]byte, error) {
 	ctx, cancel := withTimeout(ctx, c.opts.Timeout)
 	defer cancel()
@@ -298,7 +331,11 @@ func (c *Client) runCombined(ctx context.Context, args ...string) ([]byte, error
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
-		return nil, wrapCommandError(err, args, stderr.Bytes())
+		if ctx.Err() != nil {
+			err = errors.Join(ctx.Err(), err)
+		}
+		diagnostics := append(append([]byte(nil), stdout.Bytes()...), stderr.Bytes()...)
+		return nil, wrapCommandError(err, args, diagnostics)
 	}
 
 	if c.opts.Verbose && stderr.Len() > 0 {
@@ -308,18 +345,15 @@ func (c *Client) runCombined(ctx context.Context, args ...string) ([]byte, error
 	return stdout.Bytes(), nil
 }
 
-func wrapCommandError(err error, args []string, stderr []byte) error {
+func wrapCommandError(err error, args []string, diagnostics []byte) error {
+	kind := "failed"
 	if errors.Is(err, context.DeadlineExceeded) {
-		return fmt.Errorf("hyprctl timeout (%s): %w", strings.Join(args, " "), err)
+		kind = "timeout"
 	}
-	if ee, ok := err.(*exec.ExitError); ok {
-		msg := strings.TrimSpace(string(stderr))
-		if msg == "" {
-			msg = ee.Error()
-		}
-		return fmt.Errorf("hyprctl failed (%s): %s", strings.Join(args, " "), msg)
+	if errors.Is(err, context.Canceled) {
+		kind = "canceled"
 	}
-	return fmt.Errorf("hyprctl exec (%s): %w", strings.Join(args, " "), err)
+	return fmt.Errorf("hyprctl %s (%s): %s: %w", kind, strings.Join(args, " "), strings.TrimSpace(string(diagnostics)), err)
 }
 
 func withTimeout(parent context.Context, dur time.Duration) (context.Context, context.CancelFunc) {
