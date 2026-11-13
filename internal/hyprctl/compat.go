@@ -59,15 +59,32 @@ func serializeDispatch(parser configParser, args []string) ([]string, error) {
 	if strings.ContainsAny(args[0], " \t\r\n\x00") {
 		return nil, fmt.Errorf("dispatch: invalid dispatcher %q", args[0])
 	}
+	name := args[0]
+	isMove := name == "movetoworkspace" || name == "movetoworkspacesilent"
+	// Moves accept an optional window selector so callers never have to
+	// focus the window first (focusing reveals its hidden workspace).
+	var window string
+	if isMove && len(args) == 3 {
+		window = args[2]
+		if strings.TrimSpace(window) == "" || strings.ContainsAny(window, ",\x00") {
+			return nil, fmt.Errorf("dispatch %s: invalid window selector %q", name, window)
+		}
+		args = args[:2]
+	}
 	if parser == legacyParser {
 		for _, arg := range args {
 			if strings.ContainsRune(arg, 0) {
 				return nil, fmt.Errorf("dispatch: NUL in argument")
 			}
 		}
+		if window != "" {
+			if len(args) != 2 || strings.TrimSpace(args[1]) == "" || strings.Contains(args[1], ",") {
+				return nil, fmt.Errorf("dispatch %s: expected one nonempty selector", name)
+			}
+			return []string{"dispatch", name, args[1] + "," + window}, nil
+		}
 		return append([]string{"dispatch"}, args...), nil
 	}
-	name := args[0]
 	switch name {
 	case "focusmonitor", "workspace", "focuswindow", "movetoworkspace", "movetoworkspacesilent", "togglefloating":
 	default:
@@ -90,7 +107,11 @@ func serializeDispatch(parser configParser, args []string) ([]string, error) {
 		if strings.Contains(args[1], ",") {
 			return nil, fmt.Errorf("dispatch %s: compound move selectors unsupported", name)
 		}
-		expr = fmt.Sprintf("hl.dsp.window.move({workspace=%s,follow=%t})", selector, name == "movetoworkspace")
+		if window != "" {
+			expr = fmt.Sprintf("hl.dsp.window.move({workspace=%s,follow=%t,window=%s})", selector, name == "movetoworkspace", luaString(window))
+		} else {
+			expr = fmt.Sprintf("hl.dsp.window.move({workspace=%s,follow=%t})", selector, name == "movetoworkspace")
+		}
 	case "togglefloating":
 		expr = "hl.dsp.window.float({action=\"toggle\",window=" + selector + "})"
 	}

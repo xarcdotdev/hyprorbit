@@ -84,6 +84,38 @@ func TestDispatchTranslations(t *testing.T) {
 	}
 }
 
+func TestMoveWithWindowSelector(t *testing.T) {
+	cases := []struct {
+		name string
+		lua  bool
+		want string
+	}{
+		{"movetoworkspacesilent", false, "dispatch movetoworkspacesilent name:work,address:0x1"},
+		{"movetoworkspace", false, "dispatch movetoworkspace name:work,address:0x1"},
+		{"movetoworkspacesilent", true, `dispatch hl.dsp.window.move({workspace="name:work",follow=false,window="address:0x1"})`},
+		{"movetoworkspace", true, `dispatch hl.dsp.window.move({workspace="name:work",follow=true,window="address:0x1"})`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name+map[bool]string{false: "legacy", true: "lua"}[tc.lua], func(t *testing.T) {
+			calls := fakeHyprctl(t)
+			if !tc.lua {
+				t.Setenv("PROBE", "unknown request")
+			}
+			if err := NewClient(Options{}).Dispatch(context.Background(), tc.name, "name:work", "address:0x1"); err != nil {
+				t.Fatal(err)
+			}
+			if got := calls(); !reflect.DeepEqual(got, []string{"eval return nil", tc.want}) {
+				t.Fatalf("calls: %q", got)
+			}
+		})
+	}
+	for _, bad := range []string{"", "address:0x1,x", "a\x00"} {
+		if _, err := serializeDispatch(luaParser, []string{"movetoworkspace", "name:work", bad}); err == nil {
+			t.Fatalf("expected error for window %q", bad)
+		}
+	}
+}
+
 func TestParserDetection(t *testing.T) {
 	for _, tc := range []struct {
 		probe, exit string

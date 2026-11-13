@@ -192,34 +192,28 @@ func (c *Client) FocusWindow(ctx context.Context, address string) error {
 
 // MoveToWorkspaceFollow moves a window to the target workspace and follows it.
 func (c *Client) MoveToWorkspaceFollow(ctx context.Context, windowAddr, workspace string) error {
-	workspace = strings.TrimSpace(workspace)
-	if workspace == "" {
-		return fmt.Errorf("movetoworkspace: workspace name missing")
-	}
-
-	if addr := strings.TrimSpace(windowAddr); addr != "" {
-		if err := c.FocusWindow(ctx, addr); err != nil {
-			return fmt.Errorf("movetoworkspace: focus %s: %w", addr, err)
-		}
-	}
-
-	return c.Dispatch(ctx, "movetoworkspace", "name:"+workspace)
+	return c.moveToWorkspace(ctx, "movetoworkspace", windowAddr, workspace)
 }
 
 // MoveToWorkspaceSilent moves a window to the target workspace without following it.
 func (c *Client) MoveToWorkspaceSilent(ctx context.Context, windowAddr, workspace string) error {
+	return c.moveToWorkspace(ctx, "movetoworkspacesilent", windowAddr, workspace)
+}
+
+// moveToWorkspace addresses the window directly instead of focusing it first:
+// focusing a window on a hidden workspace makes its monitor show that workspace,
+// which then stays visible (and is never destroyed) once the window leaves.
+func (c *Client) moveToWorkspace(ctx context.Context, dispatcher, windowAddr, workspace string) error {
 	workspace = strings.TrimSpace(workspace)
 	if workspace == "" {
-		return fmt.Errorf("movetoworkspacesilent: workspace name missing")
+		return fmt.Errorf("%s: workspace name missing", dispatcher)
 	}
 
 	if addr := strings.TrimSpace(windowAddr); addr != "" {
-		if err := c.FocusWindow(ctx, addr); err != nil {
-			return fmt.Errorf("movetoworkspacesilent: focus %s: %w", addr, err)
-		}
+		return c.Dispatch(ctx, dispatcher, "name:"+workspace, "address:"+addr)
 	}
 
-	return c.Dispatch(ctx, "movetoworkspacesilent", "name:"+workspace)
+	return c.Dispatch(ctx, dispatcher, "name:"+workspace)
 }
 
 // SwitchWorkspace switches focus to the named workspace.

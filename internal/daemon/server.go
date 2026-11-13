@@ -162,8 +162,10 @@ func (s *Server) Shutdown(ctx context.Context) error {
 func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
 	defer conn.Close()
 
-	deadline := time.Now().Add(500 * time.Millisecond)
-	_ = conn.SetDeadline(deadline)
+	// Bound socket I/O only: handlers such as workspace reset legitimately
+	// take longer than this, and their response must still be delivered.
+	const ioTimeout = 500 * time.Millisecond
+	_ = conn.SetDeadline(time.Now().Add(ioTimeout))
 
 	decoder := json.NewDecoder(conn)
 	encoder := json.NewEncoder(conn)
@@ -178,6 +180,7 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
 	}
 
 	resp, stream, err := s.dispatcher.Handle(ctx, req)
+	_ = conn.SetDeadline(time.Now().Add(ioTimeout))
 	if err != nil {
 		resp.Success = false
 		resp.Error = err.Error()
