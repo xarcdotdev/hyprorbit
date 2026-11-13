@@ -1,4 +1,10 @@
 
+## [0.2.1] - 2026-11-13
+
+### Fixed
+- Workspace reset no longer leaves a numbered workspace (e.g. `3`) on a secondary monitor; windows are now moved by address instead of being focused first, which made Hyprland re-show their hidden workspace.
+- Long-running daemon requests (workspace reset, `window move all --global`) no longer fail with `ipc: decode response: EOF`; the 500 ms IPC deadline now only bounds socket I/O, not request handling.
+
 ## [0.2.0] - 2026-09-15
 
 ### Breaking Changes
