@@ -1,4 +1,4 @@
-## [Unreleased]
+## [0.2.2] - 2026-11-19
 
 ### Fixed
 - Monitors connected after startup (docking, hotplug) are switched from Hyprland's numbered default workspace to an unused module workspace of the active orbit.
