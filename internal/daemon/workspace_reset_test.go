@@ -59,9 +59,12 @@ func (h *resetHyprStub) MoveToWorkspaceSilent(_ context.Context, address, target
 }
 func (h *resetHyprStub) InvalidateClients() { h.invalidations++ }
 
-func resetDispatcher(t *testing.T, h *resetHyprStub) *Dispatcher {
+func resetDispatcher(t *testing.T, h runtime.HyprctlClient, extraModules ...string) *Dispatcher {
 	t.Helper()
 	cfg := &config.EffectiveConfig{Modules: map[string]config.ModuleRecord{"code": {}, "web": {}}, Orbits: []config.OrbitRecord{{Name: "alpha"}}}
+	for _, name := range extraModules {
+		cfg.Modules[name] = config.ModuleRecord{}
+	}
 	os, err := orbit.NewServiceWithDependencies(orbit.Dependencies{Config: cfg, Tracker: &fakeOrbitTracker{current: "alpha", sequence: []string{"alpha"}}})
 	if err != nil {
 		t.Fatal(err)

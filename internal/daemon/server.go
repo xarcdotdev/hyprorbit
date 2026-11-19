@@ -50,10 +50,13 @@ func NewServer(ctx context.Context, opts Options) (*Server, error) {
 		return nil, fmt.Errorf("failed to setup debug logging: %w", err)
 	}
 
+	dispatcher := NewDispatcher(daemonState, logger)
+	daemonState.SetMonitorAddedHandler(dispatcher.handleMonitorAdded)
+
 	return &Server{
 		opts:       opts,
 		state:      daemonState,
-		dispatcher: NewDispatcher(daemonState, logger),
+		dispatcher: dispatcher,
 	}, nil
 }
 

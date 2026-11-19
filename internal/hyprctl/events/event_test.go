@@ -32,6 +32,18 @@ func TestParseEvent(t *testing.T) {
 			wantWSName: "dev",
 		},
 		{
+			name:     "monitor added legacy",
+			input:    "monitoradded>>DP-9",
+			wantType: TypeMonitorAdded,
+			wantMon:  "DP-9",
+		},
+		{
+			name:     "monitor added v2",
+			input:    "monitoraddedv2>>3,DP-10,BNQ BenQ GW2780, rev 2",
+			wantType: TypeMonitorAddedV2,
+			wantMon:  "DP-10",
+		},
+		{
 			name:       "active workspace",
 			input:      "activeworkspace>>alpha",
 			wantType:   TypeActiveWorkspace,

@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -151,7 +152,18 @@ func (d *Dispatcher) alignMonitor(ctx context.Context, hypr runtime.HyprctlClien
 		return preferredWorkspace, nil
 	}
 
-	workspaceName, err := d.jumpToPrimaryModuleWorkspaceFiltered(ctx, exclude)
+	// Switching to a workspace owned by another monitor only moves focus there,
+	// leaving this monitor where it was. Prefer workspaces this monitor owns or
+	// that do not exist yet; relax only if that leaves nothing.
+	strict := cloneWorkspaceSet(exclude)
+	for ws := range d.workspacesOnOtherMonitors(ctx, hypr, mon.Name) {
+		strict[ws] = struct{}{}
+	}
+	workspaceName, err := d.jumpToPrimaryModuleWorkspaceFiltered(ctx, strict)
+	if errors.Is(err, errNoEligibleWorkspace) {
+		d.debugf("alignMonitorsToOrbit: no workspace free of other monitors for %q, relaxing", mon.Name)
+		workspaceName, err = d.jumpToPrimaryModuleWorkspaceFiltered(ctx, exclude)
+	}
 	if err != nil {
 		return "", fmt.Errorf("align monitors: %w", err)
 	}
@@ -171,6 +183,26 @@ func (d *Dispatcher) switchToPreferred(ctx context.Context, hypr runtime.Hyprctl
 	d.state.recordWorkspaceActivation(preferredWorkspace)
 	d.debugf("alignMonitorsToOrbit: monitor %q now on preferred workspace %q", monitorName, preferredWorkspace)
 	return nil
+}
+
+// workspacesOnOtherMonitors lists workspaces (visible or hidden) that Hyprland
+// assigns to a monitor other than monitorName. Errors yield an empty set.
+func (d *Dispatcher) workspacesOnOtherMonitors(ctx context.Context, hypr runtime.HyprctlClient, monitorName string) map[string]struct{} {
+	result := make(map[string]struct{})
+	workspaces, err := hypr.Workspaces(ctx)
+	if err != nil {
+		d.debugf("alignMonitorsToOrbit: list workspaces for %q failed: %v", monitorName, err)
+		return result
+	}
+	for _, ws := range workspaces {
+		name := strings.TrimSpace(ws.Name)
+		owner := strings.TrimSpace(ws.Monitor)
+		if name == "" || owner == "" || owner == monitorName {
+			continue
+		}
+		result[name] = struct{}{}
+	}
+	return result
 }
 
 func cloneWorkspaceSet(src map[string]struct{}) map[string]struct{} {
@@ -400,5 +432,7 @@ func (d *Dispatcher) jumpToFirstModuleWorkspaceWithExclusions(ctx context.Contex
 		d.debugf("jumpToFirstModuleWorkspace: jumped to workspace=%q", result.Workspace)
 		return strings.TrimSpace(result.Workspace), nil
 	}
-	return "", fmt.Errorf("failed to jump to module: no eligible workspace")
+	return "", errNoEligibleWorkspace
 }
+
+var errNoEligibleWorkspace = errors.New("failed to jump to module: no eligible workspace")

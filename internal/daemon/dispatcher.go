@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	"hyprorbit/internal/config"
 	"hyprorbit/internal/hyprctl"
@@ -27,6 +28,9 @@ import (
 type Dispatcher struct {
 	state  *DaemonState
 	logger *log.Logger
+
+	// alignMu serializes whole-desktop monitor alignment (reset, hotplug).
+	alignMu sync.Mutex
 }
 
 type windowMoveResult struct {
@@ -1151,6 +1155,8 @@ func (d *Dispatcher) streamModuleStatus() StreamHandler {
 // resetWorkspaces evacuates clients and waits for non-module workspaces to disappear.
 func (d *Dispatcher) resetWorkspaces(ctx context.Context) error {
 	d.debugf("resetWorkspaces: starting workspace reset")
+	d.alignMu.Lock()
+	defer d.alignMu.Unlock()
 	hypr, err := d.requireHyprctlClient()
 	if err != nil {
 		return fmt.Errorf("workspace reset: %w", err)

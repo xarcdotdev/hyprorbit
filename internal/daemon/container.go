@@ -51,6 +51,8 @@ type DaemonState struct {
 	eventsSub    *events.Subscriber
 	eventsCancel context.CancelFunc
 
+	monitorAddedHandler func(ctx context.Context, monitorName string)
+
 	wg        sync.WaitGroup
 	startOnce sync.Once
 	stopOnce  sync.Once
@@ -762,6 +764,9 @@ func (s *DaemonState) consumeHyprEvents(ctx context.Context, sub *events.Subscri
 				eventsCh = nil
 				continue
 			}
+			if ev.Type == events.TypeMonitorAdded || ev.Type == events.TypeMonitorAddedV2 {
+				s.dispatchMonitorAdded(ctx, ev)
+			}
 			if shouldPublishSnapshot(ev.Type) {
 				if err := s.PublishSnapshot(context.Background()); err != nil {
 					s.logf("snapshot publish: %v", err)
@@ -777,9 +782,38 @@ func (s *DaemonState) consumeHyprEvents(ctx context.Context, sub *events.Subscri
 	}
 }
 
+// SetMonitorAddedHandler registers a callback for monitor hotplug events.
+// It must be set before Start.
+func (s *DaemonState) SetMonitorAddedHandler(fn func(ctx context.Context, monitorName string)) {
+	s.mu.Lock()
+	s.monitorAddedHandler = fn
+	s.mu.Unlock()
+}
+
+// dispatchMonitorAdded runs the handler off the event loop so alignment never
+// stalls event consumption.
+func (s *DaemonState) dispatchMonitorAdded(ctx context.Context, ev events.Event) {
+	if ev.Monitor == nil || strings.TrimSpace(ev.Monitor.Name) == "" {
+		return
+	}
+	s.mu.RLock()
+	handler := s.monitorAddedHandler
+	s.mu.RUnlock()
+	if handler == nil {
+		return
+	}
+	name := strings.TrimSpace(ev.Monitor.Name)
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		handler(ctx, name)
+	}()
+}
+
 func shouldPublishSnapshot(t events.EventType) bool {
 	switch t {
-	case events.TypeWorkspace, events.TypeWorkspaceV2, events.TypeActiveWorkspace, events.TypeActiveWindow, events.TypeFocusedMonitor:
+	case events.TypeWorkspace, events.TypeWorkspaceV2, events.TypeActiveWorkspace, events.TypeActiveWindow, events.TypeFocusedMonitor,
+		events.TypeMonitorAdded, events.TypeMonitorAddedV2:
 		return true
 	default:
 		return false

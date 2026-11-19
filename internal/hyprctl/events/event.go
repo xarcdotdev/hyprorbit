@@ -22,6 +22,10 @@ const (
 	TypeFocusedMonitor EventType = "focusedmon"
 	// TypeActiveWindow is produced when the focused window changes.
 	TypeActiveWindow EventType = "activewindow"
+	// TypeMonitorAdded is emitted when a monitor is connected (payload: name).
+	TypeMonitorAdded EventType = "monitoradded"
+	// TypeMonitorAddedV2 is emitted when a monitor is connected (payload: id,name,description).
+	TypeMonitorAddedV2 EventType = "monitoraddedv2"
 )
 
 // Event represents a single Hyprland socket notification.
@@ -101,6 +105,16 @@ func ParseEvent(line string) (Event, error) {
 	case TypeActiveWindow:
 		if win := parseActiveWindow(payload); win != nil {
 			ev.Window = win
+		}
+	case TypeMonitorAdded:
+		if name := strings.TrimSpace(payload); name != "" {
+			ev.Monitor = &Monitor{Name: name}
+		}
+	case TypeMonitorAddedV2:
+		if parts := strings.SplitN(payload, ",", 3); len(parts) >= 2 {
+			if name := strings.TrimSpace(parts[1]); name != "" {
+				ev.Monitor = &Monitor{Name: name}
+			}
 		}
 	default:
 		if rawType == "" {
